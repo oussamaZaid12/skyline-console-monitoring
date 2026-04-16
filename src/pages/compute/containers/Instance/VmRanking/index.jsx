@@ -66,7 +66,7 @@ export default class VmRanking extends Component {
 
   fetchData = async () => {
     try {
-      const response = await fetch('/api/skyline/api/v1/vm-ranking');
+      const response = await fetch('/api/openstack/skyline/api/v1/vm-ranking');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       this.setState({ loading: false, error: null, data, lastUpdate: new Date().toLocaleTimeString() });
