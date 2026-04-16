@@ -70,6 +70,18 @@ const renderMenu = (t) => {
               key: 'ironicCreate',
               level: 2,
             },
+            {
+              path: '/compute/instance/vm-ranking',
+              name: t('VM Ranking'),
+              key: 'vmRanking',
+              level: 2,
+            },
+            {
+              path: '/compute/instance/ai-agent',
+              name: t('AI Agent'),
+              key: 'aiAgent',
+              level: 2,
+            },
           ],
         },
         {

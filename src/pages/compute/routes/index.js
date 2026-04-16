@@ -25,6 +25,8 @@ import TabImage from '../containers/Image';
 import ImageAdmin from '../containers/Image/Image';
 import ImageCreate from '../containers/Image/actions/Create';
 import InstanceSnapshot from '../containers/InstanceSnapshot';
+import VmRanking from '../containers/Instance/VmRanking';
+import AiAgent from '../containers/Instance/AiAgent';
 import Keypair from '../containers/Keypair';
 import KeypairDetail from '../containers/Keypair/Detail';
 import ServerGroup from '../containers/ServerGroup';
@@ -56,6 +58,8 @@ export default [
         exact: true,
       },
       { path: `${PATH}/instance/create`, component: StepCreate, exact: true },
+      { path: `${PATH}/instance/vm-ranking`, component: VmRanking, exact: true },
+      { path: `${PATH}/instance/ai-agent`, component: AiAgent, exact: true },
       {
         path: `${PATH}/ironic-instance/create`,
         component: CreateIronic,
