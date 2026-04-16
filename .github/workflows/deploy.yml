@@ -27,9 +27,9 @@ jobs:
       run: npm install
 
     - name: Build
-      run: npm run build
-      env:
-        SKIP_PREFLIGHT_CHECK: true
+      run: |
+        export NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=2048"
+        NODE_ENV=production ./node_modules/.bin/webpack --progress --config config/webpack.prod.js
 
     - name: Build Docker image
       run: docker build --no-cache -t skyline-console-monitoring:final .
