@@ -20,9 +20,10 @@ jobs:
 
     - name: Build
       run: |
-        NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=2048" \
         NODE_ENV=production \
         ./node_modules/.bin/webpack --config config/webpack.prod.js
+      env:
+        NODE_OPTIONS: "--openssl-legacy-provider --max-old-space-size=2048"
 
     - name: Build Docker image
       run: docker build --no-cache -t skyline-console-monitoring:final .
