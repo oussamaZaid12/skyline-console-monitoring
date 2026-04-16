@@ -130,7 +130,7 @@ export default class Monitoring extends Component {
 
   fetchRealtime = async () => {
     try {
-      const response = await fetch(`/api/openstack/skyline/api/v1/dev/instance-metrics/${this.instanceId}`);
+      const response = await fetch(`/api/openstack/skyline/api/v1/instances/${this.instanceId}/metrics`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       const now = new Date();
@@ -153,7 +153,7 @@ export default class Monitoring extends Component {
   fetchHistory = async (period) => {
     this.setState({ loadingHistory: true });
     try {
-      const response = await fetch(`/api/skyline/api/v1/instance-history/${this.instanceId}?period=${period}`);
+      const response = await fetch(`/api/openstack/skyline/api/v1/instance-history/${this.instanceId}?period=${period}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       this.setState({ history: data, loadingHistory: false, period });
