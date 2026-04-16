@@ -77,13 +77,13 @@ const renderMenu = (t) => {
               path: '/compute/instance/vm-ranking',
               name: t('VM Ranking'),
               key: 'vmRanking',
-              level: 2,
+              level: 1,
        },
        {
               path: '/compute/instance/ai-agent',
               name: t('AI Agent'),
               key: 'aiAgent',
-              level: 2,
+              level: 1,
         },
         {
           path: '/compute/instance-snapshot',
