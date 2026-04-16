@@ -13,14 +13,14 @@ jobs:
     - name: Setup Node.js 14
       uses: actions/setup-node@v3
       with:
-        node-version: '14'
+        node-version: '14.21.3'
 
     - name: Install dependencies
-      run: npm install
+      run: npm install --legacy-peer-deps
 
     - name: Build
       run: |
-        NODE_OPTIONS="--max-old-space-size=2048" \
+        NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=2048" \
         NODE_ENV=production \
         ./node_modules/.bin/webpack --progress --config config/webpack.prod.js
 
