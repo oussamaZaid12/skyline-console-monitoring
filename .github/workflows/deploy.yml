@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
 
@@ -19,10 +19,9 @@ jobs:
       run: npm install --legacy-peer-deps
 
     - name: Build
-      run: |
-        NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=2048" \
-        NODE_ENV=production \
-        ./node_modules/.bin/webpack --progress --config config/webpack.prod.js
+      run: NODE_ENV=production ./node_modules/.bin/webpack --progress --config config/webpack.prod.js
+      env:
+        NODE_OPTIONS: --openssl-legacy-provider --max-old-space-size=2048
 
     - name: Build Docker image
       run: docker build --no-cache -t skyline-console-monitoring:final .
