@@ -31,6 +31,7 @@ import ActionLog from './ActionLog';
 import Snapshots from '../../InstanceSnapshot';
 import actionConfigs from '../actions';
 import Log from './Log';
+import Monitoring from './Monitoring';
 
 export class InstanceDetail extends Base {
   get name() {
@@ -143,6 +144,11 @@ export class InstanceDetail extends Base {
         title: t('Security Groups'),
         key: 'securityGroup',
         component: SecurityGroup,
+      },
+      {
+        title: t('Monitoring'),
+        key: 'monitoring',
+        component: Monitoring,
       },
       {
         title: t('Action Logs'),
