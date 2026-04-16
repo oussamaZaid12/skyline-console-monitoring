@@ -10,20 +10,18 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Setup Node.js 16
+    - name: Setup Node.js 14
       uses: actions/setup-node@v3
       with:
-        node-version: '16'
+        node-version: '14'
 
     - name: Install dependencies
       run: npm install
 
     - name: Build
       run: |
-        NODE_ENV=production \
-        ./node_modules/.bin/webpack --config config/webpack.prod.js
-      env:
-        NODE_OPTIONS: "--openssl-legacy-provider --max-old-space-size=2048"
+        export NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=2048"
+        NODE_ENV=production ./node_modules/.bin/webpack --config config/webpack.prod.js
 
     - name: Build Docker image
       run: docker build --no-cache -t skyline-console-monitoring:final .
