@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v3
 
@@ -18,18 +18,11 @@ jobs:
     - name: Install dependencies
       run: npm install
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '16'
-
-    - name: Install dependencies
-      run: npm install
-
     - name: Build
       run: |
-        export NODE_OPTIONS="--openssl-legacy-provider --max-old-space-size=2048"
-        NODE_ENV=production ./node_modules/.bin/webpack --progress --config config/webpack.prod.js
+        NODE_OPTIONS="--max-old-space-size=2048" \
+        NODE_ENV=production \
+        ./node_modules/.bin/webpack --progress --config config/webpack.prod.js
 
     - name: Build Docker image
       run: docker build --no-cache -t skyline-console-monitoring:final .
