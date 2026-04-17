@@ -78,7 +78,10 @@ export default class AiAgent extends Component {
       const response = await fetch('/api/openstack/skyline/api/v1/ai-agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage.content, history: messages.slice(-10) }),
+      body: JSON.stringify({ 
+        message: userMessage.content, 
+        history: messages.slice(-10),
+      }),
       });
       const data = await response.json();
       this.setState(prev => ({
