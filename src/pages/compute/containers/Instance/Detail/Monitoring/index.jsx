@@ -119,36 +119,13 @@ export default class Monitoring extends Component {
   }
 
   componentDidMount() {
-    this.fetchRealtime();
     this.fetchHistory('1h');
-    this.refreshInterval = setInterval(this.fetchRealtime, 5000);
+    this.refreshInterval = setInterval(this.fetchHistory.bind(this, this.state.period), 30000);
   }
 
   componentWillUnmount() { clearInterval(this.refreshInterval); }
 
   get instanceId() { return this.props.detail?.id; }
-
-  fetchRealtime = async () => {
-    try {
-      const response = await fetch(`/api/openstack/skyline/api/v1/instances/${this.instanceId}/metrics`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const now = new Date();
-      const ts = Math.floor(now.getTime() / 1000);
-      const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
-      this.setState(prev => ({
-        loading: false, error: null, metrics: data,
-        realtimeCpu:       [...prev.realtimeCpu.slice(-59),       { time: timeStr, value: data.cpu_percent, ts }],
-        realtimeMem:       [...prev.realtimeMem.slice(-59),       { time: timeStr, value: data.memory_mb, ts }],
-        realtimeNetRx:     [...prev.realtimeNetRx.slice(-59),     { time: timeStr, value: parseFloat((data.network_rx_bytes_per_sec / 1024).toFixed(2)), ts }],
-        realtimeNetTx:     [...prev.realtimeNetTx.slice(-59),     { time: timeStr, value: parseFloat((data.network_tx_bytes_per_sec / 1024).toFixed(2)), ts }],
-        realtimeDiskRead:  [...prev.realtimeDiskRead.slice(-59),  { time: timeStr, value: parseFloat((data.disk_read_bytes_per_sec / 1024).toFixed(2)), ts }],
-        realtimeDiskWrite: [...prev.realtimeDiskWrite.slice(-59), { time: timeStr, value: parseFloat((data.disk_write_bytes_per_sec / 1024).toFixed(2)), ts }],
-      }));
-    } catch (err) {
-      this.setState({ loading: false, error: err.message });
-    }
-  };
 
   fetchHistory = async (period) => {
     this.setState({ loadingHistory: true });
@@ -156,30 +133,19 @@ export default class Monitoring extends Component {
       const response = await fetch(`/api/openstack/skyline/api/v1/instance-history/${this.instanceId}?period=${period}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      this.setState({ history: data, loadingHistory: false, period });
+      this.setState({ history: data, loadingHistory: false, period, loading: false, error: null });
     } catch (err) {
-      this.setState({ loadingHistory: false });
+      this.setState({ loadingHistory: false, loading: false, error: err.message });
     }
   };
 
   onPeriodChange = (e) => this.fetchHistory(e.target.value);
 
-  mergeData(historyPoints, realtimePoints, period) {
-    if (!historyPoints || !historyPoints.length)
-      return realtimePoints.map(p => ({ time: p.time, value: p.value }));
-    const histFormatted = historyPoints.map(p => ({ time: formatTime(p.time, period), value: p.value, ts: p.time }));
-    const lastHistTs = historyPoints[historyPoints.length - 1]?.time || 0;
-    const newRealtime = realtimePoints.filter(p => p.ts > lastHistTs).map(p => ({ time: p.time, value: p.value, ts: p.ts }));
-    return [...histFormatted, ...newRealtime];
-  }
-
   render() {
-    const { loading, error, metrics, history, period, loadingHistory,
-            realtimeCpu, realtimeMem, realtimeNetRx, realtimeNetTx,
-            realtimeDiskRead, realtimeDiskWrite } = this.state;
+    const { loading, error, history, period, loadingHistory } = this.state;
     const { detail } = this.props;
 
-    if (loading && !metrics) return (
+    if (loading && !history) return (
       <div style={{ textAlign: 'center', padding: 80 }}>
         <Spin size="large" />
         <div style={{ marginTop: 12, color: COLOR.textCaption, fontSize: 13 }}>{t('Loading metrics...')}</div>
@@ -188,22 +154,32 @@ export default class Monitoring extends Component {
 
     if (error) return <Alert message={t('Error Loading Metrics')} description={error} type="error" showIcon style={{ margin: 24 }} />;
 
-    const vcpus         = history?.vcpus || 1;
-    const diskCapGb     = history?.disk_capacity_gb || 0;
-    const cpuData       = this.mergeData(history?.cpu,              realtimeCpu,       period);
-    const memData       = this.mergeData(history?.memory_mb,        realtimeMem,       period);
-    const netRxData     = this.mergeData(history?.network_rx_kbps,  realtimeNetRx,     period);
-    const netTxData     = this.mergeData(history?.network_tx_kbps,  realtimeNetTx,     period);
-    const diskReadData  = this.mergeData(history?.disk_read_kbps,   realtimeDiskRead,  period);
-    const diskWriteData = this.mergeData(history?.disk_write_kbps,  realtimeDiskWrite, period);
-    const periodLabel   = { '1h': t('Last 1h'), '6h': t('Last 6h'), '24h': t('Last 24h') };
+    const vcpus      = history?.vcpus || 1;
+    const diskCapGb  = history?.disk_capacity_gb || 0;
+
+    // Dernières valeurs de l'historique pour les cartes
+    const lastCpu      = history?.cpu?.slice(-1)[0]?.value ?? 0;
+    const lastMem      = history?.memory_mb?.slice(-1)[0]?.value ?? 0;
+    const lastDiskW    = history?.disk_write_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastDiskR    = history?.disk_read_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetRx    = history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetTx    = history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
+
+    const cpuData       = history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const memData       = history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const netRxData     = history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const netTxData     = history?.network_tx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const diskReadData  = history?.disk_read_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const diskWriteData = history?.disk_write_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+
+    const periodLabel = { '1h': t('Last 1h'), '6h': t('Last 6h'), '24h': t('Last 24h') };
 
     return (
       <div className={styles.monitoring}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: COLOR.textTitle }}>{t('Instance Monitoring')} — {detail?.name}</div>
-            <div style={{ fontSize: 12, color: COLOR.textCaption, marginTop: 2 }}>{history?.domain} · {t('Auto-refresh every 5s')}</div>
+            <div style={{ fontSize: 12, color: COLOR.textCaption, marginTop: 2 }}>{history?.domain} · {t('Auto-refresh every 30s')}</div>
           </div>
           <Radio.Group value={period} onChange={this.onPeriodChange} size="small" buttonStyle="solid">
             <Radio.Button value="1h">1h</Radio.Button>
@@ -212,63 +188,61 @@ export default class Monitoring extends Component {
           </Radio.Group>
         </div>
 
-        {metrics && (
-          <Row gutter={16} style={{ marginBottom: 20 }}>
-            <Col span={6}>
-              <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
-                style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${metrics.cpu_percent > 80 ? COLOR.danger : COLOR.primary}` }}>
-                <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('CPU Usage')}</span>}
-                  value={metrics.cpu_percent} precision={1} suffix="%"
-                  valueStyle={{ color: metrics.cpu_percent > 80 ? COLOR.danger : COLOR.primary, fontSize: 22 }} />
-                <CpuCores vcpus={vcpus} cpuPercent={metrics.cpu_percent} />
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
-                style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${COLOR.success}` }}>
-                <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('Memory')}</span>}
-                  value={metrics.memory_mb} precision={0} suffix="MB"
-                  valueStyle={{ color: COLOR.success, fontSize: 22 }} />
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ height: 6, background: COLOR.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${COLOR.border}` }}>
-                    <div style={{ height: '100%', width: `${Math.min((metrics.memory_mb / 4096) * 100, 100)}%`, background: COLOR.success, borderRadius: 3, transition: 'width 0.5s ease' }} />
-                  </div>
-                  <div style={{ fontSize: 10, color: COLOR.textCaption, marginTop: 3 }}>{metrics.memory_mb.toFixed(0)} / 4096 MB</div>
+        <Row gutter={16} style={{ marginBottom: 20 }}>
+          <Col span={6}>
+            <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
+              style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${lastCpu > 80 ? COLOR.danger : COLOR.primary}` }}>
+              <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('CPU Usage')}</span>}
+                value={lastCpu} precision={1} suffix="%"
+                valueStyle={{ color: lastCpu > 80 ? COLOR.danger : COLOR.primary, fontSize: 22 }} />
+              <CpuCores vcpus={vcpus} cpuPercent={lastCpu} />
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
+              style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${COLOR.success}` }}>
+              <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('Memory')}</span>}
+                value={lastMem} precision={0} suffix="MB"
+                valueStyle={{ color: COLOR.success, fontSize: 22 }} />
+              <div style={{ marginTop: 10 }}>
+                <div style={{ height: 6, background: COLOR.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${COLOR.border}` }}>
+                  <div style={{ height: '100%', width: `${Math.min((lastMem / 4096) * 100, 100)}%`, background: COLOR.success, borderRadius: 3, transition: 'width 0.5s ease' }} />
                 </div>
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
-                style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${COLOR.warning}` }}>
-                <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('Disk Write')}</span>}
-                  value={(metrics.disk_write_bytes_per_sec / 1024).toFixed(1)} suffix="KB/s"
-                  valueStyle={{ color: COLOR.warning, fontSize: 22 }} />
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: COLOR.textCaption }}>
-                    <span>{t('Read')}</span>
-                    <span style={{ color: COLOR.textBody, fontWeight: 500 }}>{(metrics.disk_read_bytes_per_sec / 1024).toFixed(1)} KB/s</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: COLOR.textCaption, marginTop: 4 }}>
-                    <span>{t('Capacity')}</span>
-                    <span style={{ color: COLOR.textBody, fontWeight: 500 }}>{diskCapGb} GB</span>
-                  </div>
+                <div style={{ fontSize: 10, color: COLOR.textCaption, marginTop: 3 }}>{lastMem.toFixed(0)} / 4096 MB</div>
+              </div>
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
+              style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${COLOR.warning}` }}>
+              <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('Disk Write')}</span>}
+                value={lastDiskW.toFixed(1)} suffix="KB/s"
+                valueStyle={{ color: COLOR.warning, fontSize: 22 }} />
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: COLOR.textCaption }}>
+                  <span>{t('Read')}</span>
+                  <span style={{ color: COLOR.textBody, fontWeight: 500 }}>{lastDiskR.toFixed(1)} KB/s</span>
                 </div>
-              </Card>
-            </Col>
-            <Col span={6}>
-              <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
-                style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${COLOR.purple}` }}>
-                <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('Network RX')}</span>}
-                  value={(metrics.network_rx_bytes_per_sec / 1024).toFixed(2)} suffix="KB/s"
-                  valueStyle={{ color: COLOR.purple, fontSize: 22 }} />
-                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 11, color: COLOR.textCaption }}>
-                  <span>{t('TX')}</span>
-                  <span style={{ color: COLOR.textBody, fontWeight: 500 }}>{(metrics.network_tx_bytes_per_sec / 1024).toFixed(1)} KB/s</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: COLOR.textCaption, marginTop: 4 }}>
+                  <span>{t('Capacity')}</span>
+                  <span style={{ color: COLOR.textBody, fontWeight: 500 }}>{diskCapGb} GB</span>
                 </div>
-              </Card>
-            </Col>
-          </Row>
-        )}
+              </div>
+            </Card>
+          </Col>
+          <Col span={6}>
+            <Card bordered={false} bodyStyle={{ padding: '14px 18px' }}
+              style={{ background: COLOR.bgCard, borderRadius: 4, boxShadow: '0 2px 6px rgba(36,46,66,0.06)', borderTop: `3px solid ${COLOR.purple}` }}>
+              <Statistic title={<span style={{ fontSize: 12, color: COLOR.textCaption }}>{t('Network RX')}</span>}
+                value={lastNetRx.toFixed(2)} suffix="KB/s"
+                valueStyle={{ color: COLOR.purple, fontSize: 22 }} />
+              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: 11, color: COLOR.textCaption }}>
+                <span>{t('TX')}</span>
+                <span style={{ color: COLOR.textBody, fontWeight: 500 }}>{lastNetTx.toFixed(1)} KB/s</span>
+              </div>
+            </Card>
+          </Col>
+        </Row>
 
         <Spin spinning={loadingHistory}>
           <Row gutter={16}>
