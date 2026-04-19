@@ -359,20 +359,18 @@ export default class VmRanking extends Component {
           minHeight: '100%',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div
-            style={{
-              fontSize: 12,
-              color: COLOR.textCaption,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-            }}
-          >
-            <ReloadOutlined spin={loading} style={{ fontSize: 11 }} />
-            {t('Last update')}: {lastUpdate} — {t('Auto-refresh every 30s')}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: COLOR.textTitle }}>{t('Instance Monitoring — VM Ranking')}</div>
+            <div style={{ width: 32, height: 2, background: COLOR.primary, marginTop: 4, borderRadius: 1 }} />
           </div>
-          <AlertsModal instances={this.state.instancesList} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ fontSize: 12, color: COLOR.textCaption, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ReloadOutlined spin={loading} style={{ fontSize: 11 }} />
+              {t('Last update')}: {lastUpdate} — {t('Auto-refresh every 30s')}
+            </div>
+            <AlertsModal instances={this.state.instancesList} />
+          </div>
         </div>
 
         <Row gutter={16} style={{ marginBottom: 16 }}>
