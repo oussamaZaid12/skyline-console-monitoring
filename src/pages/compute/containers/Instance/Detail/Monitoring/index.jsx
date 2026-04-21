@@ -109,21 +109,55 @@ export default class Monitoring extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      loading: true, error: null, metrics: null, history: null,
+      loading: true, error: null, history: null,
       period: '1h', loadingHistory: false,
       realtimeCpu: [], realtimeMem: [],
       realtimeNetRx: [], realtimeNetTx: [],
       realtimeDiskRead: [], realtimeDiskWrite: [],
+      liveMetrics: null,
     };
     this.refreshInterval = null;
+    this.eventSource = null;
   }
-
   componentDidMount() {
     this.fetchHistory('1h');
-    this.refreshInterval = setInterval(this.fetchHistory.bind(this, this.state.period), 30000);
+    this.startSSE();
   }
 
-  componentWillUnmount() { clearInterval(this.refreshInterval); }
+  componentWillUnmount() {
+    clearInterval(this.refreshInterval);
+    if (this.eventSource) this.eventSource.close();
+  }
+
+  startSSE = () => {
+    if (!this.instanceId) return;
+    
+    const url = `/api/openstack/skyline/api/v1/instances/${this.instanceId}/metrics-stream`;
+    this.eventSource = new EventSource(url, { withCredentials: true });
+
+    this.eventSource.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      const time = new Date().toLocaleTimeString();
+      
+      this.setState(prev => ({
+        liveMetrics: m,
+        realtimeCpu:       [...prev.realtimeCpu.slice(-59),       { time, value: m.cpu_percent }],
+        realtimeMem:       [...prev.realtimeMem.slice(-59),       { time, value: m.memory_mb }],
+        realtimeNetRx:     [...prev.realtimeNetRx.slice(-59),     { time, value: m.network_rx_kbps }],
+        realtimeNetTx:     [...prev.realtimeNetTx.slice(-59),     { time, value: m.network_tx_kbps }],
+        realtimeDiskRead:  [...prev.realtimeDiskRead.slice(-59),  { time, value: m.disk_read_kbps }],
+        realtimeDiskWrite: [...prev.realtimeDiskWrite.slice(-59), { time, value: m.disk_write_kbps }],
+      }));
+    };
+
+    this.eventSource.addEventListener('connected', (e) => {
+      console.log('[SSE] Connected:', JSON.parse(e.data));
+    });
+
+    this.eventSource.onerror = () => {
+      console.warn('[SSE] Disconnected, retrying...');
+    };
+  };
 
   get instanceId() { return this.props.detail?.id; }
 
@@ -154,17 +188,17 @@ export default class Monitoring extends Component {
 
     if (error) return <Alert message={t('Error Loading Metrics')} description={error} type="error" showIcon style={{ margin: 24 }} />;
 
-    const vcpus      = history?.vcpus || 1;
     const diskCapGb  = history?.disk_capacity_gb || 0;
 
-    // Dernières valeurs de l'historique pour les cartes
-    const lastCpu      = history?.cpu?.slice(-1)[0]?.value ?? 0;
-    const lastMem      = history?.memory_mb?.slice(-1)[0]?.value ?? 0;
-    const lastDiskW    = history?.disk_write_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastDiskR    = history?.disk_read_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastNetRx    = history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastNetTx    = history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
-
+    // APRÈS — utilise SSE si disponible, sinon historique
+    const { liveMetrics } = this.state;
+    const lastCpu       = liveMetrics?.cpu_percent      ?? history?.cpu?.slice(-1)[0]?.value ?? 0;
+    const lastMem       = liveMetrics?.memory_mb        ?? history?.memory_mb?.slice(-1)[0]?.value ?? 0;
+    const lastDiskW     = liveMetrics?.disk_write_kbps  ?? history?.disk_write_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastDiskR     = liveMetrics?.disk_read_kbps   ?? history?.disk_read_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetRx     = liveMetrics?.network_rx_kbps  ?? history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetTx     = liveMetrics?.network_tx_kbps  ?? history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
+    const vcpus         = liveMetrics?.vcpus            ?? history?.vcpus ?? 1;
     const cpuData       = history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
     const memData       = history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
     const netRxData     = history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
@@ -179,8 +213,18 @@ export default class Monitoring extends Component {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: COLOR.textTitle }}>{t('Instance Monitoring')} — {detail?.name}</div>
-            <div style={{ fontSize: 12, color: COLOR.textCaption, marginTop: 2 }}>{history?.domain} · {t('Auto-refresh every 30s')}</div>
-          </div>
+            <div style={{ fontSize: 12, color: COLOR.textCaption, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {history?.domain}
+              {liveMetrics ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#52c41a', fontWeight: 500 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#52c41a', display: 'inline-block', animation: 'pulse 1.5s infinite' }} />
+                  Live
+                </span>
+              ) : (
+                <span>{t('Auto-refresh every 30s')}</span>
+              )}
+            </div>
+            </div>
           <Radio.Group value={period} onChange={this.onPeriodChange} size="small" buttonStyle="solid">
             <Radio.Button value="1h">1h</Radio.Button>
             <Radio.Button value="6h">6h</Radio.Button>
