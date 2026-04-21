@@ -199,13 +199,15 @@ export default class Monitoring extends Component {
     const lastNetRx     = liveMetrics?.network_rx_kbps  ?? history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
     const lastNetTx     = liveMetrics?.network_tx_kbps  ?? history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
     const vcpus         = liveMetrics?.vcpus            ?? history?.vcpus ?? 1;
-    const cpuData       = history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const memData       = history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const netRxData     = history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const netTxData     = history?.network_tx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const diskReadData  = history?.disk_read_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const diskWriteData = history?.disk_write_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    // APRÈS — realtime si disponible, sinon historique
+    const { realtimeCpu, realtimeMem, realtimeNetRx, realtimeNetTx, realtimeDiskRead, realtimeDiskWrite } = this.state;
 
+    const cpuData       = realtimeCpu.length       ? realtimeCpu       : history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const memData       = realtimeMem.length       ? realtimeMem       : history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const netRxData     = realtimeNetRx.length     ? realtimeNetRx     : history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const netTxData     = realtimeNetTx.length     ? realtimeNetTx     : history?.network_tx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const diskReadData  = realtimeDiskRead.length  ? realtimeDiskRead  : history?.disk_read_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const diskWriteData = realtimeDiskWrite.length ? realtimeDiskWrite : history?.disk_write_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
     const periodLabel = { '1h': t('Last 1h'), '6h': t('Last 6h'), '24h': t('Last 24h') };
 
     return (
