@@ -25,7 +25,7 @@ function formatTime(ts, period) {
   const d = new Date(ts * 1000);
   if (period === '24h')
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'00')}`;
 }
 
 const CpuCores = ({ vcpus, cpuPercent }) => {
@@ -119,9 +119,12 @@ export default class Monitoring extends Component {
     this.refreshInterval = null;
     this.eventSource = null;
   }
+
   componentDidMount() {
     this.fetchHistory('1h');
     this.startSSE();
+    // Refresh historique toutes les 5 minutes (pas 30s) pour ne pas écraser le realtime
+    this.refreshInterval = setInterval(() => this.fetchHistory(this.state.period), 300000);
   }
 
   componentWillUnmount() {
@@ -131,14 +134,14 @@ export default class Monitoring extends Component {
 
   startSSE = () => {
     if (!this.instanceId) return;
-    
+
     const url = `/api/openstack/skyline/api/v1/instances/${this.instanceId}/metrics-stream`;
     this.eventSource = new EventSource(url, { withCredentials: true });
 
     this.eventSource.onmessage = (e) => {
       const m = JSON.parse(e.data);
       const time = new Date().toLocaleTimeString();
-      
+
       this.setState(prev => ({
         liveMetrics: m,
         realtimeCpu:       [...prev.realtimeCpu.slice(-59),       { time, value: m.cpu_percent }],
@@ -167,7 +170,17 @@ export default class Monitoring extends Component {
       const response = await fetch(`/api/openstack/skyline/api/v1/instance-history/${this.instanceId}?period=${period}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      this.setState({ history: data, loadingHistory: false, period, loading: false, error: null });
+      this.setState({
+        history: data,
+        loadingHistory: false,
+        period,
+        loading: false,
+        error: null,
+        // Vider le realtime quand on change de période pour éviter les doublons
+        realtimeCpu: [], realtimeMem: [],
+        realtimeNetRx: [], realtimeNetTx: [],
+        realtimeDiskRead: [], realtimeDiskWrite: [],
+      });
     } catch (err) {
       this.setState({ loadingHistory: false, loading: false, error: err.message });
     }
@@ -176,7 +189,7 @@ export default class Monitoring extends Component {
   onPeriodChange = (e) => this.fetchHistory(e.target.value);
 
   render() {
-    const { loading, error, history, period, loadingHistory } = this.state;
+    const { loading, error, history, period, loadingHistory, liveMetrics } = this.state;
     const { detail } = this.props;
 
     if (loading && !history) return (
@@ -188,26 +201,34 @@ export default class Monitoring extends Component {
 
     if (error) return <Alert message={t('Error Loading Metrics')} description={error} type="error" showIcon style={{ margin: 24 }} />;
 
-    const diskCapGb  = history?.disk_capacity_gb || 0;
+    const diskCapGb = history?.disk_capacity_gb || 0;
 
-    // APRÈS — utilise SSE si disponible, sinon historique
-    const { liveMetrics } = this.state;
-    const lastCpu       = liveMetrics?.cpu_percent      ?? history?.cpu?.slice(-1)[0]?.value ?? 0;
-    const lastMem       = liveMetrics?.memory_mb        ?? history?.memory_mb?.slice(-1)[0]?.value ?? 0;
-    const lastDiskW     = liveMetrics?.disk_write_kbps  ?? history?.disk_write_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastDiskR     = liveMetrics?.disk_read_kbps   ?? history?.disk_read_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastNetRx     = liveMetrics?.network_rx_kbps  ?? history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastNetTx     = liveMetrics?.network_tx_kbps  ?? history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
-    const vcpus         = liveMetrics?.vcpus            ?? history?.vcpus ?? 1;
-    // APRÈS — realtime si disponible, sinon historique
+    // Cartes : SSE en priorité, sinon dernière valeur historique
+    const lastCpu   = liveMetrics?.cpu_percent      ?? history?.cpu?.slice(-1)[0]?.value ?? 0;
+    const lastMem   = liveMetrics?.memory_mb        ?? history?.memory_mb?.slice(-1)[0]?.value ?? 0;
+    const lastDiskW = liveMetrics?.disk_write_kbps  ?? history?.disk_write_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastDiskR = liveMetrics?.disk_read_kbps   ?? history?.disk_read_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetRx = liveMetrics?.network_rx_kbps  ?? history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetTx = liveMetrics?.network_tx_kbps  ?? history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
+    const vcpus     = liveMetrics?.vcpus            ?? history?.vcpus ?? 1;
+
+    // Graphiques : historique comme base + realtime qui s'ajoute à droite
     const { realtimeCpu, realtimeMem, realtimeNetRx, realtimeNetTx, realtimeDiskRead, realtimeDiskWrite } = this.state;
 
-    const cpuData       = realtimeCpu.length       ? realtimeCpu       : history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const memData       = realtimeMem.length       ? realtimeMem       : history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const netRxData     = realtimeNetRx.length     ? realtimeNetRx     : history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const netTxData     = realtimeNetTx.length     ? realtimeNetTx     : history?.network_tx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const diskReadData  = realtimeDiskRead.length  ? realtimeDiskRead  : history?.disk_read_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const diskWriteData = realtimeDiskWrite.length ? realtimeDiskWrite : history?.disk_write_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histCpu       = history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histMem       = history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histNetRx     = history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histNetTx     = history?.network_tx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histDiskRead  = history?.disk_read_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histDiskWrite = history?.disk_write_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+
+    const cpuData       = [...histCpu,       ...realtimeCpu];
+    const memData       = [...histMem,       ...realtimeMem];
+    const netRxData     = [...histNetRx,     ...realtimeNetRx];
+    const netTxData     = [...histNetTx,     ...realtimeNetTx];
+    const diskReadData  = [...histDiskRead,  ...realtimeDiskRead];
+    const diskWriteData = [...histDiskWrite, ...realtimeDiskWrite];
+
     const periodLabel = { '1h': t('Last 1h'), '6h': t('Last 6h'), '24h': t('Last 24h') };
 
     return (
@@ -223,10 +244,10 @@ export default class Monitoring extends Component {
                   Live
                 </span>
               ) : (
-                <span>{t('Auto-refresh every 30s')}</span>
+                <span>{t('Auto-refresh every 5min')}</span>
               )}
             </div>
-            </div>
+          </div>
           <Radio.Group value={period} onChange={this.onPeriodChange} size="small" buttonStyle="solid">
             <Radio.Button value="1h">1h</Radio.Button>
             <Radio.Button value="6h">6h</Radio.Button>
