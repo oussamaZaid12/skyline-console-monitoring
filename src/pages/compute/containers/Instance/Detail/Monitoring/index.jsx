@@ -25,7 +25,7 @@ function formatTime(ts, period) {
   const d = new Date(ts * 1000);
   if (period === '24h')
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'00')}`;
 }
 
 const CpuCores = ({ vcpus, cpuPercent }) => {
@@ -109,21 +109,58 @@ export default class Monitoring extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      loading: true, error: null, metrics: null, history: null,
+      loading: true, error: null, history: null,
       period: '1h', loadingHistory: false,
       realtimeCpu: [], realtimeMem: [],
       realtimeNetRx: [], realtimeNetTx: [],
       realtimeDiskRead: [], realtimeDiskWrite: [],
+      liveMetrics: null,
     };
     this.refreshInterval = null;
+    this.eventSource = null;
   }
 
   componentDidMount() {
     this.fetchHistory('1h');
-    this.refreshInterval = setInterval(this.fetchHistory.bind(this, this.state.period), 30000);
+    this.startSSE();
+    // Refresh historique toutes les 5 minutes (pas 30s) pour ne pas écraser le realtime
+    this.refreshInterval = setInterval(() => this.fetchHistory(this.state.period), 300000);
   }
 
-  componentWillUnmount() { clearInterval(this.refreshInterval); }
+  componentWillUnmount() {
+    clearInterval(this.refreshInterval);
+    if (this.eventSource) this.eventSource.close();
+  }
+
+  startSSE = () => {
+    if (!this.instanceId) return;
+
+    const url = `/api/openstack/skyline/api/v1/instances/${this.instanceId}/metrics-stream`;
+    this.eventSource = new EventSource(url, { withCredentials: true });
+
+    this.eventSource.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      const time = new Date().toLocaleTimeString();
+
+      this.setState(prev => ({
+        liveMetrics: m,
+        realtimeCpu:       [...prev.realtimeCpu.slice(-59),       { time, value: m.cpu_percent }],
+        realtimeMem:       [...prev.realtimeMem.slice(-59),       { time, value: m.memory_mb }],
+        realtimeNetRx:     [...prev.realtimeNetRx.slice(-59),     { time, value: m.network_rx_kbps }],
+        realtimeNetTx:     [...prev.realtimeNetTx.slice(-59),     { time, value: m.network_tx_kbps }],
+        realtimeDiskRead:  [...prev.realtimeDiskRead.slice(-59),  { time, value: m.disk_read_kbps }],
+        realtimeDiskWrite: [...prev.realtimeDiskWrite.slice(-59), { time, value: m.disk_write_kbps }],
+      }));
+    };
+
+    this.eventSource.addEventListener('connected', (e) => {
+      console.log('[SSE] Connected:', JSON.parse(e.data));
+    });
+
+    this.eventSource.onerror = () => {
+      console.warn('[SSE] Disconnected, retrying...');
+    };
+  };
 
   get instanceId() { return this.props.detail?.id; }
 
@@ -133,7 +170,17 @@ export default class Monitoring extends Component {
       const response = await fetch(`/api/openstack/skyline/api/v1/instance-history/${this.instanceId}?period=${period}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      this.setState({ history: data, loadingHistory: false, period, loading: false, error: null });
+      this.setState({
+        history: data,
+        loadingHistory: false,
+        period,
+        loading: false,
+        error: null,
+        // Vider le realtime quand on change de période pour éviter les doublons
+        realtimeCpu: [], realtimeMem: [],
+        realtimeNetRx: [], realtimeNetTx: [],
+        realtimeDiskRead: [], realtimeDiskWrite: [],
+      });
     } catch (err) {
       this.setState({ loadingHistory: false, loading: false, error: err.message });
     }
@@ -142,7 +189,7 @@ export default class Monitoring extends Component {
   onPeriodChange = (e) => this.fetchHistory(e.target.value);
 
   render() {
-    const { loading, error, history, period, loadingHistory } = this.state;
+    const { loading, error, history, period, loadingHistory, liveMetrics } = this.state;
     const { detail } = this.props;
 
     if (loading && !history) return (
@@ -154,23 +201,33 @@ export default class Monitoring extends Component {
 
     if (error) return <Alert message={t('Error Loading Metrics')} description={error} type="error" showIcon style={{ margin: 24 }} />;
 
-    const vcpus      = history?.vcpus || 1;
-    const diskCapGb  = history?.disk_capacity_gb || 0;
+    const diskCapGb = history?.disk_capacity_gb || 0;
 
-    // Dernières valeurs de l'historique pour les cartes
-    const lastCpu      = history?.cpu?.slice(-1)[0]?.value ?? 0;
-    const lastMem      = history?.memory_mb?.slice(-1)[0]?.value ?? 0;
-    const lastDiskW    = history?.disk_write_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastDiskR    = history?.disk_read_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastNetRx    = history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
-    const lastNetTx    = history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
+    // Cartes : SSE en priorité, sinon dernière valeur historique
+    const lastCpu   = liveMetrics?.cpu_percent      ?? history?.cpu?.slice(-1)[0]?.value ?? 0;
+    const lastMem   = liveMetrics?.memory_mb        ?? history?.memory_mb?.slice(-1)[0]?.value ?? 0;
+    const lastDiskW = liveMetrics?.disk_write_kbps  ?? history?.disk_write_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastDiskR = liveMetrics?.disk_read_kbps   ?? history?.disk_read_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetRx = liveMetrics?.network_rx_kbps  ?? history?.network_rx_kbps?.slice(-1)[0]?.value ?? 0;
+    const lastNetTx = liveMetrics?.network_tx_kbps  ?? history?.network_tx_kbps?.slice(-1)[0]?.value ?? 0;
+    const vcpus     = liveMetrics?.vcpus            ?? history?.vcpus ?? 1;
 
-    const cpuData       = history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const memData       = history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const netRxData     = history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const netTxData     = history?.network_tx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const diskReadData  = history?.disk_read_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
-    const diskWriteData = history?.disk_write_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    // Graphiques : historique comme base + realtime qui s'ajoute à droite
+    const { realtimeCpu, realtimeMem, realtimeNetRx, realtimeNetTx, realtimeDiskRead, realtimeDiskWrite } = this.state;
+
+    const histCpu       = history?.cpu?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histMem       = history?.memory_mb?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histNetRx     = history?.network_rx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histNetTx     = history?.network_tx_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histDiskRead  = history?.disk_read_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+    const histDiskWrite = history?.disk_write_kbps?.map(p => ({ time: formatTime(p.time, period), value: p.value })) || [];
+
+    const cpuData       = [...histCpu,       ...realtimeCpu];
+    const memData       = [...histMem,       ...realtimeMem];
+    const netRxData     = [...histNetRx,     ...realtimeNetRx];
+    const netTxData     = [...histNetTx,     ...realtimeNetTx];
+    const diskReadData  = [...histDiskRead,  ...realtimeDiskRead];
+    const diskWriteData = [...histDiskWrite, ...realtimeDiskWrite];
 
     const periodLabel = { '1h': t('Last 1h'), '6h': t('Last 6h'), '24h': t('Last 24h') };
 
@@ -179,7 +236,17 @@ export default class Monitoring extends Component {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 600, color: COLOR.textTitle }}>{t('Instance Monitoring')} — {detail?.name}</div>
-            <div style={{ fontSize: 12, color: COLOR.textCaption, marginTop: 2 }}>{history?.domain} · {t('Auto-refresh every 30s')}</div>
+            <div style={{ fontSize: 12, color: COLOR.textCaption, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
+              {history?.domain}
+              {liveMetrics ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#52c41a', fontWeight: 500 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#52c41a', display: 'inline-block', animation: 'pulse 1.5s infinite' }} />
+                  Live
+                </span>
+              ) : (
+                <span>{t('Auto-refresh every 5min')}</span>
+              )}
+            </div>
           </div>
           <Radio.Group value={period} onChange={this.onPeriodChange} size="small" buttonStyle="solid">
             <Radio.Button value="1h">1h</Radio.Button>
