@@ -12,8 +12,12 @@ import {
 
 const { TextArea } = Input;
 const API_BASE = '/api/openstack/skyline/api/v1';
-const getConvId = () => crypto.randomUUID();
-
+const getConvId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+};
 const S = {
   fab: {
     position: 'fixed', bottom: 28, right: 28, zIndex: 9999,
