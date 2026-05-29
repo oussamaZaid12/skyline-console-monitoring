@@ -11,7 +11,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import AlertsModal from './AlertsModal';
-
+import AiAgent from './AiAgent';
 const { TabPane } = Tabs;
 
 const COLOR = {
@@ -502,6 +502,8 @@ export default class VmRanking extends Component {
         >
           {data.total_vms} {t('instances monitored')}
         </div>
+        {/* Assistant AIOps — bouton flottant */}
+        <AiAgent />
       </div>
     );
   }
