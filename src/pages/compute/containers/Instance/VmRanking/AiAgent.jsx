@@ -237,21 +237,24 @@ function AiAgentWidget() {
 
 // Export via ReactDOM.createPortal — monté sur document.body
 // Visible sur TOUTES les pages, indépendamment des erreurs de page
-export default function AiAgent() {
-  const [container] = useState(() => {
-    const div = document.createElement('div');
-    div.id = 'aiops-agent-portal';
-    document.body.appendChild(div);
-    return div;
-  });
+// Auto-mount au chargement du module — indépendant de React tree
+let _mounted = false;
 
-  useEffect(() => {
-    return () => {
-      if (container && document.body.contains(container)) {
-        document.body.removeChild(container);
-      }
-    };
-  }, [container]);
-
-  return ReactDOM.createPortal(<AiAgentWidget />, container);
+function mountAiAgent() {
+  if (_mounted) return;
+  _mounted = true;
+  const container = document.createElement('div');
+  container.id = 'aiops-agent-portal';
+  document.body.appendChild(container);
+  ReactDOM.render(<AiAgentWidget />, container);
 }
+
+// Monter dès que le DOM est prêt
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', mountAiAgent);
+} else {
+  mountAiAgent();
+}
+
+// Export vide — le composant se monte automatiquement
+export default function AiAgent() { return null; }
