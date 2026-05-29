@@ -242,19 +242,22 @@ let _mounted = false;
 
 function mountAiAgent() {
   if (_mounted) return;
+  if (!document.body) return;
   _mounted = true;
+  const existing = document.getElementById('aiops-agent-portal');
+  if (existing) return;
   const container = document.createElement('div');
   container.id = 'aiops-agent-portal';
   document.body.appendChild(container);
   ReactDOM.render(<AiAgentWidget />, container);
 }
 
-// Monter dès que le DOM est prêt
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', mountAiAgent);
-} else {
-  mountAiAgent();
-}
+// Attendre 2 secondes que React/Skyline soit initialisé
+setTimeout(mountAiAgent, 2000);
 
-// Export vide — le composant se monte automatiquement
-export default function AiAgent() { return null; }
+export default function AiAgent() {
+  useEffect(() => {
+    mountAiAgent();
+  }, []);
+  return null;
+}
