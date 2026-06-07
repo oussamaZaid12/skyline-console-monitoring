@@ -86,6 +86,21 @@ const getConvId = () => {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 };
 
+// Skyline stocke le token Keystone de la session active dans localStorage
+// sous la forme {"expires": <ms epoch>, "value": "gAAAAA..."}. On le relit
+// ici pour le transmettre à l'agent : sans lui, get_conn() ne peut pas ouvrir
+// de connexion OpenStack au nom de l'utilisateur (chaque utilisateur a ses
+// propres projets/instances — impossible d'utiliser un compte de service unique).
+const getKeystoneToken = () => {
+  try {
+    const raw = localStorage.getItem('keystone_token');
+    if (!raw) return '';
+    const { expires, value } = JSON.parse(raw);
+    if (!value || (expires && Date.now() > expires)) return '';
+    return value;
+  } catch (_) { return ''; }
+};
+
 function parseConfirmation(content) {
   if (!content || typeof content !== 'string') return null;
   try { const p = JSON.parse(content); if (p?.type === 'confirmation_required') return p; } catch (_) {}
@@ -348,14 +363,19 @@ function AiAgentWidget() {
     const controller = new AbortController();
     abortRef.current  = controller;
     try {
+      const keystone_token = getKeystoneToken();
       const resp = await fetch(`${API_BASE}/chat`, {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, history, conversation_id: convId }),
+        body: JSON.stringify({ message: msg, history, conversation_id: convId, keystone_token }),
         signal: controller.signal,
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      if (!keystone_token && /Token Keystone manquant|session OpenStack/i.test(data.response || '')) {
+        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Session Skyline introuvable ou expirée — reconnectez-vous puis réessayez.' }]);
+        return;
+      }
       setMessages(prev => [...prev, { role: 'assistant', content: data.response || 'Pas de réponse.' }]);
     } catch (err) {
       if (err.name === 'AbortError') return;
