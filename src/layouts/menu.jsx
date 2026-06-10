@@ -79,12 +79,6 @@ const renderMenu = (t) => {
               key: 'vmRanking',
               level: 1,
        },
-       {
-              path: '/compute/instance/ai-agent',
-              name: t('AI Agent'),
-              key: 'aiAgent',
-              level: 1,
-        },
         {
           path: '/compute/instance-snapshot',
           name: t('Instance Snapshots'),
