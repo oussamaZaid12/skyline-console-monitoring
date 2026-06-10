@@ -301,7 +301,7 @@ function ArchitectureDesigner({ onSend }) {
           {tpl.params.includes('flavor') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', width: 72, flexShrink: 0 }}>Flavor</span>
-              <Select size="small" value={config.flavor} onChange={v => set('flavor', v)} style={{ flex: 1 }}>
+              <Select size="small" value={config.flavor} onChange={v => set('flavor', v)} style={{ flex: 1 }} dropdownStyle={{ zIndex: 10050 }}>
                 {FLAVORS.map(f => <Option key={f} value={f}>{f}</Option>)}
               </Select>
             </div>
@@ -309,7 +309,7 @@ function ArchitectureDesigner({ onSend }) {
           {tpl.params.includes('db_flavor') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', width: 72, flexShrink: 0 }}>DB Flavor</span>
-              <Select size="small" value={config.db_flavor} onChange={v => set('db_flavor', v)} style={{ flex: 1 }}>
+              <Select size="small" value={config.db_flavor} onChange={v => set('db_flavor', v)} style={{ flex: 1 }} dropdownStyle={{ zIndex: 10050 }}>
                 {FLAVORS.map(f => <Option key={f} value={f}>{f}</Option>)}
               </Select>
             </div>
@@ -317,7 +317,7 @@ function ArchitectureDesigner({ onSend }) {
           {tpl.params.includes('image') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', width: 72, flexShrink: 0 }}>Image</span>
-              <Select size="small" value={config.image} onChange={v => set('image', v)} style={{ flex: 1 }}>
+              <Select size="small" value={config.image} onChange={v => set('image', v)} style={{ flex: 1 }} dropdownStyle={{ zIndex: 10050 }}>
                 {IMAGES.map(i => <Option key={i} value={i}>{i}</Option>)}
               </Select>
             </div>
@@ -325,7 +325,7 @@ function ArchitectureDesigner({ onSend }) {
           {!tpl.params.includes('cidr') && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', width: 72, flexShrink: 0 }}>Réseau</span>
-              <Select size="small" value={config.network} onChange={v => set('network', v)} style={{ flex: 1 }}>
+              <Select size="small" value={config.network} onChange={v => set('network', v)} style={{ flex: 1 }} dropdownStyle={{ zIndex: 10050 }}>
                 {NETWORKS.map(n => <Option key={n} value={n}>{n}</Option>)}
               </Select>
             </div>
@@ -572,7 +572,7 @@ function AiAgentWidget() {
       {open && (
         <div style={{
           position: 'fixed', bottom: 92, right: 28, zIndex: 9998,
-          width: 460, maxHeight: 640, minHeight: 480,
+          width: 560, maxHeight: '85vh', height: 760, minHeight: 480,
           background: 'rgba(255,255,255,0.98)',
           borderRadius: 20, overflow: 'hidden',
           boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(12,99,250,0.08)',
