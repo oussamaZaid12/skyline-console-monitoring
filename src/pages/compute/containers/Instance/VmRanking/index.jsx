@@ -194,7 +194,7 @@ export default class VmRanking extends Component {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: COLOR.textTitle }}>{t('Instance Monitoring — VM Ranking')}</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: COLOR.textTitle }}>{t('Monitoring')}</div>
             <div style={{ width: 32, height: 2, background: COLOR.primary, marginTop: 4, borderRadius: 1 }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>

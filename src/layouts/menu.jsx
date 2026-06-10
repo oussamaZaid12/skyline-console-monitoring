@@ -23,6 +23,7 @@ import {
   AppstoreOutlined,
   SwitcherOutlined,
   ContainerOutlined,
+  LineChartOutlined,
 } from '@ant-design/icons';
 
 const renderMenu = (t) => {
@@ -73,12 +74,6 @@ const renderMenu = (t) => {
          
           ],
         },
-       {
-              path: '/compute/instance/vm-ranking',
-              name: t('VM Ranking'),
-              key: 'vmRanking',
-              level: 1,
-       },
         {
           path: '/compute/instance-snapshot',
           name: t('Instance Snapshots'),
@@ -161,6 +156,14 @@ const renderMenu = (t) => {
           ],
         },
       ],
+    },
+    {
+      path: '/compute/instance/vm-ranking',
+      name: t('Monitoring'),
+      key: 'vmRanking',
+      icon: <LineChartOutlined />,
+      level: 0,
+      hasChildren: false,
     },
     {
       path: '/storage',
