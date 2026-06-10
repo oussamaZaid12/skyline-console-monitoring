@@ -8,7 +8,11 @@ import { Button, Input, Select, Tooltip } from 'antd';
 import {
   RobotOutlined, SendOutlined, CloseOutlined, ClearOutlined,
   ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  CloudServerOutlined, DownloadOutlined,
+  CloudServerOutlined, DownloadOutlined, MessageOutlined, BuildOutlined,
+  SettingOutlined, EyeOutlined, WarningOutlined, CheckOutlined,
+  DesktopOutlined, DatabaseOutlined, GlobalOutlined, LockOutlined,
+  SwapOutlined, BarChartOutlined, ApiOutlined, AppstoreOutlined,
+  ApartmentOutlined,
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -22,8 +26,6 @@ const ARCH_TEMPLATES = [
   {
     type: 'single_vm',
     label: 'VM Unique',
-    emoji: '🖥️',
-    diagram: '🖥️',
     desc: '1 machine virtuelle',
     color: '#3b82f6',
     bg: '#eff6ff',
@@ -33,8 +35,6 @@ const ARCH_TEMPLATES = [
   {
     type: 'multi_vm',
     label: 'Cluster VMs',
-    emoji: '🖥️×N',
-    diagram: '🖥️ 🖥️ 🖥️',
     desc: 'N instances identiques',
     color: '#7c3aed',
     bg: '#f5f3ff',
@@ -44,8 +44,6 @@ const ARCH_TEMPLATES = [
   {
     type: 'two_tier',
     label: '2 Tiers',
-    emoji: '🖥️+🗄️',
-    diagram: '🖥️ Web\n    |\n🗄️ DB',
     desc: 'Web + Base de données',
     color: '#0891b2',
     bg: '#ecfeff',
@@ -55,8 +53,6 @@ const ARCH_TEMPLATES = [
   {
     type: 'three_tier',
     label: '3 Tiers',
-    emoji: '⚖️+🖥️+🗄️',
-    diagram: '⚖️ LB\n    |\n🖥️ 🖥️\n    |\n🗄️ DB',
     desc: 'LB + Web×N + DB',
     color: '#059669',
     bg: '#ecfdf5',
@@ -66,8 +62,6 @@ const ARCH_TEMPLATES = [
   {
     type: 'full_network',
     label: 'Réseau Complet',
-    emoji: '🌐+🔒+🔀',
-    diagram: '🌐 Network\n    |\n🔀 Router + 🔒 SG',
     desc: 'Network + Subnet + Router + SG',
     color: '#d97706',
     bg: '#fffbeb',
@@ -75,6 +69,48 @@ const ARCH_TEMPLATES = [
     params: ['name', 'cidr'],
   },
 ];
+
+// ── Diagram icon renderer (Ant Design icons, pas d'emojis clavier) ────────────
+function DiagramIcon({ type, color }) {
+  const s = { fontSize: 18, color };
+  const dot = { width: 2, height: 12, background: color, opacity: 0.4, borderRadius: 2, margin: '0 auto' };
+  switch (type) {
+    case 'single_vm':
+      return <div style={{ display: 'flex', justifyContent: 'center' }}><DesktopOutlined style={{ fontSize: 26, color }} /></div>;
+    case 'multi_vm':
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+          <DesktopOutlined style={s} /><DesktopOutlined style={s} /><DesktopOutlined style={s} />
+        </div>
+      );
+    case 'two_tier':
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <DesktopOutlined style={s} />
+          <div style={dot} />
+          <DatabaseOutlined style={s} />
+        </div>
+      );
+    case 'three_tier':
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <ApartmentOutlined style={s} />
+          <div style={dot} />
+          <div style={{ display: 'flex', gap: 4 }}><DesktopOutlined style={s} /><DesktopOutlined style={s} /></div>
+          <div style={dot} />
+          <DatabaseOutlined style={s} />
+        </div>
+      );
+    case 'full_network':
+      return (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+          <GlobalOutlined style={s} /><SwapOutlined style={s} /><LockOutlined style={s} />
+        </div>
+      );
+    default:
+      return <AppstoreOutlined style={{ fontSize: 22, color }} />;
+  }
+}
 
 const FLAVORS  = ['m1.tiny', 'm1.small', 'm1.medium', 'm1.large', 'm1.xlarge'];
 const IMAGES   = ['cirros', 'ubuntu', 'centos'];
@@ -140,15 +176,16 @@ function PulumiPreviewCard({ question }) {
   const title = titleMatch ? titleMatch[1] : 'ARCHITECTURE';
 
   const iconFor = (name) => {
-    if (/^(lb|load)/i.test(name))  return '⚖️';
-    if (/-db$|^db-/i.test(name))   return '🗄️';
-    if (/-web-?|web-/i.test(name)) return '🖥️';
-    if (/^vm-/i.test(name))        return '🖥️';
-    if (/net-|network/i.test(name))return '🌐';
-    if (/subnet/i.test(name))      return '📡';
-    if (/router/i.test(name))      return '🔀';
-    if (/sg-|secgroup/i.test(name))return '🔒';
-    return '📦';
+    const s = { fontSize: 13, color: '#78350f' };
+    if (/^(lb|load)/i.test(name))   return <ApartmentOutlined style={s} />;
+    if (/-db$|^db-/i.test(name))    return <DatabaseOutlined style={s} />;
+    if (/-web-?|web-/i.test(name))  return <DesktopOutlined style={s} />;
+    if (/^vm-/i.test(name))         return <DesktopOutlined style={s} />;
+    if (/net-|network/i.test(name)) return <GlobalOutlined style={s} />;
+    if (/subnet/i.test(name))       return <ApiOutlined style={s} />;
+    if (/router/i.test(name))       return <SwapOutlined style={s} />;
+    if (/sg-|secgroup/i.test(name)) return <LockOutlined style={s} />;
+    return <AppstoreOutlined style={s} />;
   };
 
   const resources = [];
@@ -156,8 +193,8 @@ function PulumiPreviewCard({ question }) {
 
   return (
     <div>
-      <div style={{ fontWeight: 700, color: '#92400e', fontSize: 13, marginBottom: 8 }}>
-        ⚠️ {title}
+      <div style={{ fontWeight: 700, color: '#92400e', fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <WarningOutlined style={{ fontSize: 14, color: '#d97706' }} /> {title}
       </div>
       {stackName && (
         <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#78350f', background: 'rgba(217,119,6,0.1)', borderRadius: 6, padding: '3px 8px', marginBottom: 10, wordBreak: 'break-all' }}>
@@ -175,8 +212,8 @@ function PulumiPreviewCard({ question }) {
         </div>
       )}
       {resCount > 0 && (
-        <div style={{ fontSize: 11, color: '#78350f', fontWeight: 600 }}>
-          📊 {resCount} ressource(s) à créer
+        <div style={{ fontSize: 11, color: '#78350f', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+          <BarChartOutlined style={{ fontSize: 12 }} /> {resCount} ressource(s) à créer
         </div>
       )}
     </div>
@@ -231,7 +268,9 @@ function ArchitectureDesigner({ onSend }) {
                 transform: isSelected ? 'scale(1.02)' : 'scale(1)',
               }}
             >
-              <div style={{ fontSize: 22, marginBottom: 4, whiteSpace: 'pre', lineHeight: 1.4 }}>{t.diagram}</div>
+              <div style={{ marginBottom: 6, minHeight: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <DiagramIcon type={t.type} color={isSelected ? t.color : '#94a3b8'} />
+              </div>
               <div style={{ fontSize: 12, fontWeight: 700, color: t.color }}>{t.label}</div>
               <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{t.desc}</div>
             </div>
@@ -242,8 +281,8 @@ function ArchitectureDesigner({ onSend }) {
       {/* Config panel */}
       {selected && tpl && (
         <div style={{ background: '#ffffff', borderRadius: 14, padding: '14px', border: `1px solid ${tpl.border}` }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: tpl.color, letterSpacing: '0.5px', marginBottom: 12 }}>
-            ⚙️ CONFIGURATION — {tpl.label.toUpperCase()}
+          <div style={{ fontSize: 11, fontWeight: 700, color: tpl.color, letterSpacing: '0.5px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <SettingOutlined style={{ fontSize: 12 }} /> CONFIGURATION — {tpl.label.toUpperCase()}
           </div>
           {[
             { label: 'Nom', show: true, type: 'input', key: 'name', placeholder: 'monapp' },
@@ -300,9 +339,9 @@ function ArchitectureDesigner({ onSend }) {
           )}
           <Button
             type="primary" style={{ width: '100%', height: 38, borderRadius: 12, fontWeight: 600, fontSize: 13, marginTop: 6, background: `linear-gradient(135deg, ${tpl.color}, #0c63fa)`, borderColor: 'transparent' }}
-            icon={<CloudServerOutlined />}
+            icon={<EyeOutlined />}
             onClick={handlePreview}>
-            🔍 Prévisualiser l'architecture
+            Prévisualiser l'architecture
           </Button>
         </div>
       )}
@@ -341,7 +380,7 @@ function AiAgentWidget() {
   const [input, setInput]     = useState('');
   const [messages, setMessages] = useState([{
     role: 'assistant',
-    content: 'Bonjour ! Je suis votre assistant AIOps OpenStack. 🚀\n\nJe peux vous aider à :\n• 📋 Lister instances, flavors, images, volumes, réseaux\n• ⚡ Créer / supprimer des instances et volumes\n• 🏗️ Déployer des architectures complètes via Pulumi IaC\n• 📊 Diagnostiquer et monitorer votre infrastructure\n• 📈 Métriques Prometheus + logs OpenSearch\n\nUtilisez l\'onglet 🏗️ Architecture pour designer visuellement !',
+    content: 'Bonjour ! Je suis votre assistant AIOps OpenStack.\n\nJe peux vous aider à :\n• Lister instances, flavors, images, volumes, réseaux\n• Créer / supprimer des instances et volumes\n• Déployer des architectures complètes via Pulumi IaC\n• Diagnostiquer et monitorer votre infrastructure\n• Métriques Prometheus + logs OpenSearch\n\nUtilisez l\'onglet Architecture pour designer visuellement !',
   }]);
   const [streaming, setStreaming]             = useState(false);
   const [convId]                              = useState(getConvId);
@@ -373,13 +412,13 @@ function AiAgentWidget() {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       if (!keystone_token && /Token Keystone manquant|session OpenStack/i.test(data.response || '')) {
-        setMessages(prev => [...prev, { role: 'assistant', content: '⚠️ Session Skyline introuvable ou expirée — reconnectez-vous puis réessayez.' }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Session Skyline introuvable ou expirée — reconnectez-vous puis réessayez.' }]);
         return;
       }
       setMessages(prev => [...prev, { role: 'assistant', content: data.response || 'Pas de réponse.' }]);
     } catch (err) {
       if (err.name === 'AbortError') return;
-      setMessages(prev => [...prev, { role: 'assistant', content: `❌ Impossible de joindre le service agent.\n\n${err.message}` }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `Impossible de joindre le service agent.\n\n${err.message}` }]);
     } finally { setStreaming(false); }
   }, [input, streaming, messages, convId]);
 
@@ -398,7 +437,7 @@ function AiAgentWidget() {
 
   const clearChat = () => {
     abortRef.current?.abort();
-    setMessages([{ role: 'assistant', content: '🔄 Conversation réinitialisée. Comment puis-je vous aider ?' }]);
+    setMessages([{ role: 'assistant', content: 'Conversation réinitialisée. Comment puis-je vous aider ?' }]);
     setStreaming(false);
     setAnsweredConfirms(new Set());
   };
@@ -437,7 +476,7 @@ function AiAgentWidget() {
         }}>
           {isPulumi
             ? <PulumiPreviewCard question={confirm.question} />
-            : <div style={{ color: '#92400e', fontWeight: 500, whiteSpace: 'pre-wrap', fontSize: 13, marginBottom: 10 }}>⚠️ {confirm.question}</div>
+            : <div style={{ color: '#92400e', fontWeight: 500, whiteSpace: 'pre-wrap', fontSize: 13, marginBottom: 10, display: 'flex', gap: 6 }}><WarningOutlined style={{ fontSize: 14, color: '#d97706', flexShrink: 0, marginTop: 1 }} /><span>{confirm.question}</span></div>
           }
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
             <Button type="primary" size="small" icon={<CheckCircleOutlined />}
@@ -454,7 +493,7 @@ function AiAgentWidget() {
               <Button size="small" icon={<DownloadOutlined />}
                 style={{ borderRadius: 8, background: '#0f172a', borderColor: '#334155', color: '#e2e8f0' }}
                 onClick={() => handleDownload(stackName)}>
-                📥 Pulumi.zip
+                Pulumi.zip
               </Button>
             )}
           </div>
@@ -469,7 +508,7 @@ function AiAgentWidget() {
           background: '#f1f5f9', borderRadius: 10, alignSelf: 'flex-start',
           animation: 'aiops-fadein 0.2s ease',
         }}>
-          ✓ Action traitée
+          <CheckOutlined style={{ marginRight: 4 }} /> Action traitée
         </div>
       );
     }
@@ -555,8 +594,8 @@ function AiAgentWidget() {
                 </div>
                 <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', marginTop: 1 }}>
                   {streaming
-                    ? <span style={{ color: '#fde68a' }}>⚡ Traitement en cours…</span>
-                    : 'OpenStack · Llama 3.3 · Pulumi IaC'}
+                    ? <span style={{ color: '#fde68a', display: 'flex', alignItems: 'center', gap: 4 }}><ThunderboltOutlined style={{ fontSize: 11 }} /> Traitement en cours…</span>
+                    : 'OpenStack · Pulumi IaC'}
                 </div>
               </div>
               <Tooltip title="Effacer">
@@ -570,8 +609,8 @@ function AiAgentWidget() {
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 4 }}>
               {[
-                { key: 'chat',   label: '💬 Chat' },
-                { key: 'design', label: '🏗️ Architecture' },
+                { key: 'chat',   label: 'Chat',         icon: <MessageOutlined /> },
+                { key: 'design', label: 'Architecture',  icon: <BuildOutlined /> },
               ].map(t => (
                 <button key={t.key} onClick={() => setTab(t.key)} style={{
                   padding: '8px 16px', borderRadius: '10px 10px 0 0',
@@ -579,8 +618,9 @@ function AiAgentWidget() {
                   background: tab === t.key ? 'rgba(255,255,255,0.98)' : 'rgba(255,255,255,0.14)',
                   color: tab === t.key ? '#0c63fa' : 'rgba(255,255,255,0.88)',
                   transition: 'all 0.2s ease',
+                  display: 'flex', alignItems: 'center', gap: 5,
                 }}>
-                  {t.label}
+                  {t.icon} {t.label}
                 </button>
               ))}
             </div>
