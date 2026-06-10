@@ -160,10 +160,22 @@ const renderMenu = (t) => {
     {
       path: '/compute/instance/vm-ranking',
       name: t('Monitoring'),
-      key: 'vmRanking',
+      key: 'monitoring',
       icon: <LineChartOutlined />,
-      level: 0,
-      hasChildren: false,
+      children: [
+        {
+          path: '/compute/instance/vm-ranking',
+          name: t('VM Ranking'),
+          key: 'vmRanking',
+          level: 1,
+        },
+        {
+          path: '/compute/instance/alerts',
+          name: t('Alerts'),
+          key: 'alerts',
+          level: 1,
+        },
+      ],
     },
     {
       path: '/storage',

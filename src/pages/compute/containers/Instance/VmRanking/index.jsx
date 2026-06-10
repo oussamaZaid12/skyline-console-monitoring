@@ -3,14 +3,14 @@
 
 import React, { Component } from 'react';
 import { inject, observer } from 'mobx-react';
-import { Table, Card, Row, Col, Spin, Alert, Tabs } from 'antd';
+import { Table, Card, Row, Col, Spin, Alert, Tabs, Button } from 'antd';
 import {
   RiseOutlined,
   DatabaseOutlined,
   WifiOutlined,
   ReloadOutlined,
+  BellOutlined,
 } from '@ant-design/icons';
-import AlertsModal from './AlertsModal';
 import AiAgent from './AiAgent';
 
 const { TabPane } = Tabs;
@@ -56,7 +56,6 @@ export default class VmRanking extends Component {
       error: null,
       data: null,
       lastUpdate: null,
-      instancesList: [],
     };
     this.refreshInterval = null;
   }
@@ -75,18 +74,7 @@ export default class VmRanking extends Component {
       const response = await fetch('/api/openstack/skyline/api/v1/vm-ranking');
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      const allInstances = [
-        ...(data.by_cpu || []),
-        ...(data.by_memory || []),
-        ...(data.by_network || []),
-      ]
-        .filter((vm) => vm.uuid)
-        .reduce((acc, vm) => {
-          if (!acc.find((v) => v.uuid === vm.uuid))
-            acc.push({ uuid: vm.uuid, name: vm.name });
-          return acc;
-        }, []);
-      this.setState({ loading: false, error: null, data, lastUpdate: new Date().toLocaleTimeString(), instancesList: allInstances });
+      this.setState({ loading: false, error: null, data, lastUpdate: new Date().toLocaleTimeString() });
     } catch (err) {
       this.setState({ loading: false, error: err.message });
     }
@@ -202,7 +190,14 @@ export default class VmRanking extends Component {
               <ReloadOutlined spin={loading} style={{ fontSize: 11 }} />
               {t('Last update')}: {lastUpdate} — {t('Auto-refresh every 30s')}
             </div>
-            <AlertsModal instances={this.state.instancesList} />
+            <Button
+              type="primary"
+              icon={<BellOutlined />}
+              href="/compute/instance/alerts"
+              style={{ backgroundColor: COLOR.primary, borderColor: COLOR.primary }}
+            >
+              {t('Alerts')}
+            </Button>
           </div>
         </div>
 
