@@ -218,6 +218,12 @@ export default class Alerts extends Component {
     this.fetchActive(false);
   };
 
+  handleDeleteEvent = async (eventId) => {
+    await this.apiFetch(`/alerts/events/${eventId}`, { method: 'DELETE' });
+    this.fetchHistory();
+    this.fetchActive(false);
+  };
+
   metricLabel = (m) => (METRICS.find((x) => x.value === m) || {}).label || m;
 
   rulesColumns = () => [
@@ -256,6 +262,12 @@ export default class Alerts extends Component {
   ];
 
   historyColumns = () => [
+    {
+      title: '', key: 'delete', width: 48,
+      render: (_, r) => (
+        <Button size="small" icon={<DeleteOutlined />} danger onClick={() => this.handleDeleteEvent(r.id)} />
+      ),
+    },
     { title: t('Alert'), dataIndex: 'rule_name', key: 'name' },
     { title: t('Instance'), dataIndex: 'instance_name', key: 'vm' },
     { title: t('Metric'), dataIndex: 'metric', key: 'metric', render: this.metricLabel },
@@ -338,7 +350,7 @@ export default class Alerts extends Component {
     ];
 
     return (
-      <div style={{ padding: '20px 24px', background: COLOR.bg, minHeight: '100%' }}>
+      <div style={{ padding: '20px 24px', background: COLOR.bg, height: '100%', overflowY: 'auto' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>

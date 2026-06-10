@@ -158,7 +158,7 @@ const renderMenu = (t) => {
       ],
     },
     {
-      path: '/compute/instance/vm-ranking',
+      path: '/compute/monitoring',
       name: t('Monitoring'),
       key: 'monitoring',
       icon: <LineChartOutlined />,

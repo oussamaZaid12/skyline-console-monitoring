@@ -3,13 +3,12 @@
 
 import React, { Component } from 'react';
 import { inject, observer } from 'mobx-react';
-import { Table, Card, Row, Col, Spin, Alert, Tabs, Button } from 'antd';
+import { Table, Card, Row, Col, Spin, Alert, Tabs } from 'antd';
 import {
   RiseOutlined,
   DatabaseOutlined,
   WifiOutlined,
   ReloadOutlined,
-  BellOutlined,
 } from '@ant-design/icons';
 import AiAgent from './AiAgent';
 
@@ -190,14 +189,6 @@ export default class VmRanking extends Component {
               <ReloadOutlined spin={loading} style={{ fontSize: 11 }} />
               {t('Last update')}: {lastUpdate} — {t('Auto-refresh every 30s')}
             </div>
-            <Button
-              type="primary"
-              icon={<BellOutlined />}
-              href="/compute/instance/alerts"
-              style={{ backgroundColor: COLOR.primary, borderColor: COLOR.primary }}
-            >
-              {t('Alerts')}
-            </Button>
           </div>
         </div>
 
