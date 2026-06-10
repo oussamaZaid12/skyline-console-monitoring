@@ -114,7 +114,7 @@ export default class Monitoring extends Component {
       realtimeCpu: [], realtimeMem: [],
       realtimeNetRx: [], realtimeNetTx: [],
       realtimeDiskRead: [], realtimeDiskWrite: [],
-      liveMetrics: null,
+      liveMetrics: null, sseError: null,
     };
     this.refreshInterval = null;
     this.eventSource = null;
@@ -155,10 +155,21 @@ export default class Monitoring extends Component {
 
     this.eventSource.addEventListener('connected', (e) => {
       console.log('[SSE] Connected:', JSON.parse(e.data));
+      this.setState({ sseError: null });
     });
 
-    this.eventSource.onerror = () => {
-      console.warn('[SSE] Disconnected, retrying...');
+    this.eventSource.onerror = (e) => {
+      if (e?.data) {
+        // Erreur applicative envoyée par le backend (event: error avec un payload JSON)
+        let msg = t('Real-time stream error');
+        try { msg = JSON.parse(e.data).error || msg; } catch (_) { /* ignore */ }
+        console.error('[SSE] Stream error:', msg);
+        this.setState({ sseError: msg });
+      } else {
+        // Erreur de connexion réseau : l'EventSource retente automatiquement
+        console.warn('[SSE] Disconnected, retrying...');
+        this.setState({ sseError: t('Real-time stream disconnected, retrying...') });
+      }
     };
   };
 
@@ -189,7 +200,7 @@ export default class Monitoring extends Component {
   onPeriodChange = (e) => this.fetchHistory(e.target.value);
 
   render() {
-    const { loading, error, history, period, loadingHistory, liveMetrics } = this.state;
+    const { loading, error, history, period, loadingHistory, liveMetrics, sseError } = this.state;
     const { detail } = this.props;
 
     if (loading && !history) return (
@@ -202,6 +213,7 @@ export default class Monitoring extends Component {
     if (error) return <Alert message={t('Error Loading Metrics')} description={error} type="error" showIcon style={{ margin: 24 }} />;
 
     const diskCapGb = history?.disk_capacity_gb || 0;
+    const memCapMb  = history?.memory_capacity_mb || 4096;
 
     // Cartes : SSE en priorité, sinon dernière valeur historique
     const lastCpu   = liveMetrics?.cpu_percent      ?? history?.cpu?.slice(-1)[0]?.value ?? 0;
@@ -238,7 +250,12 @@ export default class Monitoring extends Component {
             <div style={{ fontSize: 16, fontWeight: 600, color: COLOR.textTitle }}>{t('Instance Monitoring')} — {detail?.name}</div>
             <div style={{ fontSize: 12, color: COLOR.textCaption, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
               {history?.domain}
-              {liveMetrics ? (
+              {sseError ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: COLOR.warning, fontWeight: 500 }} title={sseError}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: COLOR.warning, display: 'inline-block' }} />
+                  {t('Live stream unavailable')}
+                </span>
+              ) : liveMetrics ? (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#52c41a', fontWeight: 500 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#52c41a', display: 'inline-block', animation: 'pulse 1.5s infinite' }} />
                   Live
@@ -273,9 +290,9 @@ export default class Monitoring extends Component {
                 valueStyle={{ color: COLOR.success, fontSize: 22 }} />
               <div style={{ marginTop: 10 }}>
                 <div style={{ height: 6, background: COLOR.bg, borderRadius: 3, overflow: 'hidden', border: `1px solid ${COLOR.border}` }}>
-                  <div style={{ height: '100%', width: `${Math.min((lastMem / 4096) * 100, 100)}%`, background: COLOR.success, borderRadius: 3, transition: 'width 0.5s ease' }} />
+                  <div style={{ height: '100%', width: `${Math.min((lastMem / memCapMb) * 100, 100)}%`, background: COLOR.success, borderRadius: 3, transition: 'width 0.5s ease' }} />
                 </div>
-                <div style={{ fontSize: 10, color: COLOR.textCaption, marginTop: 3 }}>{lastMem.toFixed(0)} / 4096 MB</div>
+                <div style={{ fontSize: 10, color: COLOR.textCaption, marginTop: 3 }}>{lastMem.toFixed(0)} / {memCapMb} MB</div>
               </div>
             </Card>
           </Col>
