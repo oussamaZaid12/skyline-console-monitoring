@@ -4,7 +4,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Button, Input, Select, Tooltip } from 'antd';
+import { Button, Input, Select, Tooltip, Badge } from 'antd';
 import {
   RobotOutlined, SendOutlined, CloseOutlined, ClearOutlined,
   ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined,
@@ -12,7 +12,7 @@ import {
   SettingOutlined, EyeOutlined, WarningOutlined, CheckOutlined,
   DesktopOutlined, DatabaseOutlined, GlobalOutlined, LockOutlined,
   SwapOutlined, BarChartOutlined, ApiOutlined, AppstoreOutlined,
-  ApartmentOutlined,
+  ApartmentOutlined, BellOutlined,
 } from '@ant-design/icons';
 
 const { TextArea } = Input;
@@ -220,6 +220,55 @@ function PulumiPreviewCard({ question }) {
   );
 }
 
+// ── Notifications (anomalies détectées) ─────────────────────────────────────
+function NotificationsPanel({ notifications, loading, onMarkRead }) {
+  if (loading) {
+    return (
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13 }}>
+        Chargement…
+      </div>
+    );
+  }
+  if (!notifications.length) {
+    return (
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 8 }}>
+        <BellOutlined style={{ fontSize: 32 }} />
+        <div style={{ fontSize: 13 }}>Aucune notification</div>
+        <div style={{ fontSize: 11, textAlign: 'center', maxWidth: 240 }}>
+          Les anomalies détectées sur vos VMs (CPU/RAM) apparaîtront ici automatiquement.
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 8, background: '#f8fafd', minHeight: 0 }}>
+      {notifications.map(n => {
+        const isWarn = n.severity === 'warning';
+        const icon = isWarn
+          ? <WarningOutlined style={{ color: '#d97706', fontSize: 14 }} />
+          : <CheckCircleOutlined style={{ color: '#16a34a', fontSize: 14 }} />;
+        return (
+          <div key={n.id} onClick={() => !n.read && onMarkRead(n.id)} style={{
+            background: n.read ? '#fff' : (isWarn ? '#fff7ed' : '#f0fdf4'),
+            border: `1px solid ${n.read ? '#eef0f4' : (isWarn ? '#fed7aa' : '#bbf7d0')}`,
+            borderRadius: 12, padding: '10px 12px', cursor: n.read ? 'default' : 'pointer',
+            display: 'flex', gap: 8, alignItems: 'flex-start',
+          }}>
+            <div style={{ flexShrink: 0, marginTop: 1 }}>{icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.4 }}>{n.message}</div>
+              <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 4 }}>
+                {new Date(n.ts * 1000).toLocaleString('fr-FR')}
+              </div>
+            </div>
+            {!n.read && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#0c63fa', flexShrink: 0, marginTop: 4 }} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Architecture Designer ────────────────────────────────────────────────────
 function ArchitectureDesigner({ onSend }) {
   const [selected, setSelected]   = useState(null);
@@ -385,11 +434,38 @@ function AiAgentWidget() {
   const [streaming, setStreaming]             = useState(false);
   const [convId]                              = useState(getConvId);
   const [answeredConfirms, setAnsweredConfirms] = useState(new Set());
+  const [notifications, setNotifications]     = useState([]);
+  const [notifLoading, setNotifLoading]       = useState(true);
   const messagesEndRef = useRef(null);
   const abortRef       = useRef(null);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/notifications`, { credentials: 'include' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      setNotifications(data.notifications || []);
+    } catch { /* silencieux — non bloquant */ }
+    finally { setNotifLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    const id = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(id);
+  }, [fetchNotifications]);
+
+  const markNotifRead = useCallback(async (id) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    try {
+      await fetch(`${API_BASE}/notifications/${id}/read`, { method: 'POST', credentials: 'include' });
+    } catch { /* silencieux */ }
+  }, []);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const sendMessage = useCallback(async (text) => {
     const msg = (text !== undefined ? text : input).trim();
@@ -609,8 +685,9 @@ function AiAgentWidget() {
             {/* Tabs */}
             <div style={{ display: 'flex', gap: 4 }}>
               {[
-                { key: 'chat',   label: 'Chat',         icon: <MessageOutlined /> },
-                { key: 'design', label: 'Architecture',  icon: <BuildOutlined /> },
+                { key: 'chat',          label: 'Chat',          icon: <MessageOutlined /> },
+                { key: 'design',        label: 'Architecture',  icon: <BuildOutlined /> },
+                { key: 'notifications', label: 'Alertes',       icon: <BellOutlined /> },
               ].map(t => (
                 <button key={t.key} onClick={() => setTab(t.key)} style={{
                   padding: '8px 16px', borderRadius: '10px 10px 0 0',
@@ -620,7 +697,9 @@ function AiAgentWidget() {
                   transition: 'all 0.2s ease',
                   display: 'flex', alignItems: 'center', gap: 5,
                 }}>
-                  {t.icon} {t.label}
+                  {t.key === 'notifications' && unreadCount > 0
+                    ? <Badge count={unreadCount} size="small" offset={[2, -2]}>{t.icon}</Badge>
+                    : t.icon} {t.label}
                 </button>
               ))}
             </div>
@@ -653,10 +732,12 @@ function AiAgentWidget() {
                   style={{ background: 'linear-gradient(135deg, #0c63fa, #4f46e5)', borderColor: 'transparent', borderRadius: 12, height: 36, width: 36, padding: 0 }}/>
               </div>
             </>
-          ) : (
+          ) : tab === 'design' ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
               <ArchitectureDesigner onSend={sendMessage} />
             </div>
+          ) : (
+            <NotificationsPanel notifications={notifications} loading={notifLoading} onMarkRead={markNotifRead} />
           )}
         </div>
       )}

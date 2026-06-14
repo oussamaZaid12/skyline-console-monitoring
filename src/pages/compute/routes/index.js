@@ -27,6 +27,7 @@ import ImageCreate from '../containers/Image/actions/Create';
 import InstanceSnapshot from '../containers/InstanceSnapshot';
 import VmRanking from '../containers/Instance/VmRanking';
 import Alerts from '../containers/Instance/Alerts';
+import MetricExplorer from '../containers/Instance/MetricExplorer';
 import Keypair from '../containers/Keypair';
 import KeypairDetail from '../containers/Keypair/Detail';
 import ServerGroup from '../containers/ServerGroup';
@@ -60,6 +61,7 @@ export default [
       { path: `${PATH}/instance/create`, component: StepCreate, exact: true },
       { path: `${PATH}/instance/vm-ranking`, component: VmRanking, exact: true },
       { path: `${PATH}/instance/alerts`, component: Alerts, exact: true },
+      { path: `${PATH}/instance/monitoring-explorer`, component: MetricExplorer, exact: true },
       {
         path: `${PATH}/ironic-instance/create`,
         component: CreateIronic,

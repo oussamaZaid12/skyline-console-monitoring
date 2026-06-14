@@ -164,6 +164,12 @@ const renderMenu = (t) => {
       icon: <LineChartOutlined />,
       children: [
         {
+          path: '/compute/instance/monitoring-explorer',
+          name: t('Monitoring Dashboard'),
+          key: 'monitoringExplorer',
+          level: 1,
+        },
+        {
           path: '/compute/instance/vm-ranking',
           name: t('VM Ranking'),
           key: 'vmRanking',
