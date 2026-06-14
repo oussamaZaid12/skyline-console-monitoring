@@ -256,7 +256,7 @@ function NotificationsPanel({ notifications, loading, onMarkRead }) {
           }}>
             <div style={{ flexShrink: 0, marginTop: 1 }}>{icon}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.4 }}>{n.message}</div>
+              <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.4, whiteSpace: 'pre-line' }}>{n.message}</div>
               <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 4 }}>
                 {new Date(n.ts * 1000).toLocaleString('fr-FR')}
               </div>
