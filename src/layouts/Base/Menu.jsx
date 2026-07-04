@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import React, { Component } from 'react';
-import { Menu, Tooltip } from 'antd';
+import { Menu, Tooltip, Badge } from 'antd';
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import { inject, observer } from 'mobx-react';
 import { toJS } from 'mobx';
@@ -34,6 +34,7 @@ export class LayoutMenu extends Component {
       collapsed: false,
       hover: false,
       openKeys: [],
+      activeAlertCount: 0,
     };
     const shortName = getLocaleShortName();
     this.maxTitleLength = shortName === 'zh' ? 9 : 17;
@@ -41,6 +42,10 @@ export class LayoutMenu extends Component {
 
   componentDidMount() {
     this.init();
+    if (this.hasAlertsMenu()) {
+      this.fetchActiveAlertCount();
+      this.alertCountTimer = setInterval(this.fetchActiveAlertCount, 30000);
+    }
   }
 
   componentDidUpdate(prevProps) {
@@ -48,6 +53,12 @@ export class LayoutMenu extends Component {
     const { pathname: prevPathname } = prevProps;
     if (prevPathname && pathname !== prevPathname) {
       this.updateOpenKeysByRoute();
+    }
+  }
+
+  componentWillUnmount() {
+    if (this.alertCountTimer) {
+      clearInterval(this.alertCountTimer);
     }
   }
 
@@ -82,6 +93,27 @@ export class LayoutMenu extends Component {
   get routing() {
     return this.props.rootStore.routing;
   }
+
+  hasAlertsMenu = () => {
+    return this.menu.some((item) =>
+      (item.children || []).some((it) => it.key === 'alerts')
+    );
+  };
+
+  fetchActiveAlertCount = async () => {
+    try {
+      const res = await fetch('/api/openstack/skyline/api/v1/alerts/active', {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      this.setState({ activeAlertCount: data.count || 0 });
+    } catch (e) {
+      // silencieux : le badge reste simplement masqué
+    }
+  };
 
   onCollapse = (collapsed) => {
     this.setState({ collapsed });
@@ -133,11 +165,25 @@ export class LayoutMenu extends Component {
   };
 
   renderMenuItem = (item, isSubMenu) => {
-    const { collapsed, hover } = this.state;
+    const { collapsed, hover, activeAlertCount } = this.state;
+    const { openKeys = [] } = this.rootStore;
+    const monitoringOpen = toJS(openKeys).includes('monitoring');
+    const showAlertBadge =
+      activeAlertCount > 0 &&
+      ((item.key === 'monitoring' && !monitoringOpen) ||
+        (item.key === 'alerts' && monitoringOpen));
+
     if (collapsed && !hover) {
+      const icon = this.renderMenuItemIcon({ item, collapsed, isSubMenu });
       return (
         <Menu.Item key={item.key} className={styles['menu-item-collapsed']}>
-          {this.renderMenuItemIcon({ item, collapsed, isSubMenu })}
+          {item.key === 'monitoring' && activeAlertCount > 0 ? (
+            <Badge count={activeAlertCount} size="small" offset={[2, -2]}>
+              {icon}
+            </Badge>
+          ) : (
+            icon
+          )}
         </Menu.Item>
       );
     }
@@ -176,6 +222,13 @@ export class LayoutMenu extends Component {
                 item.name
               )}
             </span>
+            {showAlertBadge && (
+              <Badge
+                count={activeAlertCount}
+                size="small"
+                className={styles['menu-item-alert-badge']}
+              />
+            )}
           </span>
         </Menu.Item>
       );
@@ -192,6 +245,13 @@ export class LayoutMenu extends Component {
             item.name
           )}
         </span>
+        {showAlertBadge && (
+          <Badge
+            count={activeAlertCount}
+            size="small"
+            className={styles['menu-item-alert-badge']}
+          />
+        )}
       </span>
     );
     const subMenuItems = item.children.map((it) =>

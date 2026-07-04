@@ -402,8 +402,18 @@
 
 .sub-menu-title {
   display: flex;
+  align-items: center;
 }
 
 .menu-item-title-wrapper {
   display: flex;
+  align-items: center;
+}
+
+.menu-item-alert-badge {
+  margin-left: 8px;
+
+  :global(.ant-badge-count) {
+    box-shadow: none;
+  }
 }

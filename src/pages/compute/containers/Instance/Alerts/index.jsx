@@ -16,6 +16,7 @@ import {
   InputNumber,
   Input,
   Empty,
+  Popconfirm,
 } from 'antd';
 import {
   BellOutlined,
@@ -23,8 +24,10 @@ import {
   DeleteOutlined,
   EditOutlined,
   CheckCircleOutlined,
+  CloseCircleOutlined,
   ReloadOutlined,
   WarningOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
 
 const { Option } = Select;
@@ -58,7 +61,6 @@ const ACTION_CATEGORIES = [
   { value: 'compute', label: 'Compute (Nova)' },
   { value: 'network', label: 'Réseau (Neutron)' },
   { value: 'storage', label: 'Stockage (Cinder)' },
-  { value: 'loadbalancer', label: 'Load Balancer (Octavia)' },
 ];
 
 const ACTION_TYPES = {
@@ -70,16 +72,12 @@ const ACTION_TYPES = {
     { value: 'snapshot', label: 'Snapshot' },
   ],
   network: [
-    { value: 'add_firewall_rule', label: 'Ajouter une règle firewall' },
+    { value: 'apply_security_group', label: 'Apply a security group' },
     { value: 'reassign_floating_ip', label: 'Réassigner une floating IP' },
   ],
   storage: [
     { value: 'extend_volume', label: 'Extend volume (+X GB)' },
     { value: 'backup_volume', label: 'Backup volume' },
-  ],
-  loadbalancer: [
-    { value: 'lb_add_member', label: 'Ajouter un member au pool' },
-    { value: 'lb_remove_member', label: 'Retirer un member du pool' },
   ],
 };
 
@@ -87,6 +85,25 @@ const DELAY_OPTIONS = [
   { value: 0, label: 'Immédiat' },
   { value: 120, label: '2 minutes' },
   { value: 300, label: '5 minutes' },
+];
+
+const OPERATOR_OPTIONS = [
+  { value: 'gt', label: '>' },
+  { value: 'gte', label: '≥' },
+  { value: 'lt', label: '<' },
+  { value: 'lte', label: '≤' },
+];
+
+const OPERATOR_SYMBOLS = { gt: '>', gte: '≥', lt: '<', lte: '≤' };
+
+// Durée pendant laquelle la condition doit rester vraie en continu avant que
+// l'alerte ne se déclenche (évite de réagir à un simple pic ponctuel).
+const DURATION_OPTIONS = [
+  { value: 0, label: 'Immédiat' },
+  { value: 60, label: '1 minute' },
+  { value: 120, label: '2 minutes' },
+  { value: 300, label: '5 minutes' },
+  { value: 600, label: '10 minutes' },
 ];
 
 const ACTION_STATUS_COLORS = {
@@ -119,7 +136,13 @@ export default class Alerts extends Component {
       actionType: 'scale_up',
       actionRequireConfirmation: false,
       flavors: [],
+      currentFlavorId: null,
       loadingFlavors: false,
+      volumes: [],
+      loadingVolumes: false,
+      securityGroups: [],
+      loadingSecurityGroups: false,
+      actionLogSearch: '',
       lastUpdate: null,
     };
     this.refreshInterval = null;
@@ -147,21 +170,14 @@ export default class Alerts extends Component {
 
   fetchInstances = async () => {
     try {
-      const res = await fetch(`${API_BASE}/vm-ranking`);
+      // Endpoint scopé au projet de l'utilisateur connecté (jamais les VM
+      // d'un autre projet) — distinct de /vm-ranking qui sert au classement.
+      const res = await fetch(`${API_BASE}/alerts/my-instances`, {
+        credentials: 'include',
+      });
       if (!res.ok) return;
       const data = await res.json();
-      const all = [
-        ...(data.by_cpu || []),
-        ...(data.by_memory || []),
-        ...(data.by_network || []),
-      ]
-        .filter((vm) => vm.uuid)
-        .reduce((acc, vm) => {
-          if (!acc.find((v) => v.uuid === vm.uuid))
-            acc.push({ uuid: vm.uuid, name: vm.name });
-          return acc;
-        }, []);
-      this.setState({ instances: all });
+      this.setState({ instances: Array.isArray(data) ? data : [] });
     } catch (e) {
       console.error('[Alerts] fetchInstances:', e);
     }
@@ -241,6 +257,8 @@ export default class Alerts extends Component {
         actionType: 'scale_up',
         actionRequireConfirmation: false,
         flavors: [],
+        currentFlavorId: null,
+        volumes: [],
         showForm: true,
       },
       () => {
@@ -250,7 +268,7 @@ export default class Alerts extends Component {
   };
 
   openEditForm = (rule) => {
-    const action = rule.action;
+    const { action } = rule;
     this.setState(
       {
         editingRule: rule,
@@ -261,17 +279,42 @@ export default class Alerts extends Component {
         actionType: action ? action.action_type : 'scale_up',
         actionRequireConfirmation: action ? action.require_confirmation : false,
         flavors: [],
+        currentFlavorId: null,
+        volumes: [],
         showForm: true,
       },
       () => {
         if (this.formRef.current) {
+          // Compatibilité avec les anciens formats enregistrés avant le passage
+          // à une taille indépendante par volume (params.volumes = [{volume_id,
+          // size_gb}, ...]) : un seul volume (volume_id + size_gb), ou plusieurs
+          // volumes partageant la même taille (volume_ids + size_gb).
+          let params = action ? { ...(action.params || {}) } : {};
+          if (!params.volumes) {
+            if (params.volume_ids) {
+              params = {
+                ...params,
+                volumes: params.volume_ids.map((id) => ({
+                  volume_id: id,
+                  size_gb: params.size_gb,
+                })),
+              };
+            } else if (params.volume_id) {
+              params = {
+                ...params,
+                volumes: [
+                  { volume_id: params.volume_id, size_gb: params.size_gb },
+                ],
+              };
+            }
+          }
           this.formRef.current.setFieldsValue({
             ...rule,
             action: action
               ? {
                   category: action.category,
                   action_type: action.action_type,
-                  params: action.params || {},
+                  params,
                   delay_seconds: action.delay_seconds,
                   cooldown_seconds: action.cooldown_seconds,
                   require_confirmation: action.require_confirmation,
@@ -285,6 +328,20 @@ export default class Alerts extends Component {
             ['scale_up', 'scale_down'].includes(action.action_type)
           ) {
             this.maybeFetchFlavors();
+          }
+          if (
+            action &&
+            action.category === 'storage' &&
+            action.action_type === 'extend_volume'
+          ) {
+            this.maybeFetchVolumes();
+          }
+          if (
+            action &&
+            action.category === 'network' &&
+            action.action_type === 'apply_security_group'
+          ) {
+            this.maybeFetchSecurityGroups();
           }
         }
       }
@@ -300,7 +357,7 @@ export default class Alerts extends Component {
       ? this.formRef.current.getFieldValue('instance_id')
       : null;
     if (!instanceId || instanceId === 'all') {
-      this.setState({ flavors: [] });
+      this.setState({ flavors: [], currentFlavorId: null });
       return;
     }
     this.setState({ loadingFlavors: true });
@@ -308,32 +365,118 @@ export default class Alerts extends Component {
       const data = await this.apiFetch(
         `/alerts/actions/flavors?instance_id=${instanceId}`
       );
-      this.setState({ flavors: data.flavors || [], loadingFlavors: false });
+      this.setState({
+        flavors: data.flavors || [],
+        currentFlavorId: data.current_flavor_id || null,
+        loadingFlavors: false,
+      });
     } catch (e) {
-      this.setState({ flavors: [], loadingFlavors: false });
+      this.setState({
+        flavors: [],
+        currentFlavorId: null,
+        loadingFlavors: false,
+      });
     }
+  };
+
+  maybeFetchVolumes = async () => {
+    const instanceId = this.formRef.current
+      ? this.formRef.current.getFieldValue('instance_id')
+      : null;
+    if (!instanceId || instanceId === 'all') {
+      this.setState({ volumes: [] });
+      return;
+    }
+    this.setState({ loadingVolumes: true });
+    try {
+      const data = await this.apiFetch(
+        `/alerts/actions/volumes?instance_id=${instanceId}`
+      );
+      const volumes = data.volumes || [];
+      this.setState({ volumes, loadingVolumes: false });
+      // Présélectionne une première ligne si la VM n'a qu'un seul volume.
+      if (volumes.length === 1 && this.formRef.current) {
+        this.formRef.current.setFieldsValue({
+          action: { params: { volumes: [{ volume_id: volumes[0].id }] } },
+        });
+      }
+    } catch (e) {
+      this.setState({ volumes: [], loadingVolumes: false });
+    }
+  };
+
+  maybeFetchSecurityGroups = async () => {
+    // Les security groups sont listés au niveau du projet (pas par instance),
+    // donc pas besoin d'attendre la sélection d'une VM.
+    this.setState({ loadingSecurityGroups: true });
+    try {
+      const data = await this.apiFetch('/alerts/actions/security-groups');
+      this.setState({
+        securityGroups: data.security_groups || [],
+        loadingSecurityGroups: false,
+      });
+    } catch (e) {
+      this.setState({ securityGroups: [], loadingSecurityGroups: false });
+    }
+  };
+
+  // Ne garde que les flavors réellement sélectionnables pour le sens choisi,
+  // afin d'éviter à l'utilisateur de choisir une cible qui sera rejetée par
+  // Nova (le disque racine ne peut jamais être réduit, quel que soit le sens)
+  // ou qui ne correspond pas au sens demandé (scale up = plus grand, scale
+  // down = plus petit, en vCPU/RAM).
+  getSelectableFlavors = () => {
+    const { flavors, currentFlavorId, actionType } = this.state;
+    const current = flavors.find(
+      (f) => String(f.id) === String(currentFlavorId)
+    );
+    if (!current) return flavors;
+
+    return flavors.filter((f) => {
+      if (String(f.id) === String(current.id)) return false;
+      // Le disque racine ne peut jamais être réduit (limitation Nova) :
+      // s'applique dans les deux sens.
+      if (f.disk < current.disk) return false;
+      if (actionType === 'scale_up') {
+        // Doit être réellement plus grand (vCPU ou RAM), pas juste un disque plus grand.
+        return f.vcpus > current.vcpus || f.ram > current.ram;
+      }
+      if (actionType === 'scale_down') {
+        return f.vcpus < current.vcpus || f.ram < current.ram;
+      }
+      return true;
+    });
   };
 
   handleInstanceChange = () => {
     const { actionEnabled, actionCategory, actionType } = this.state;
+    if (!actionEnabled) return;
     if (
-      actionEnabled &&
       actionCategory === 'compute' &&
       ['scale_up', 'scale_down'].includes(actionType)
     ) {
       this.maybeFetchFlavors();
+    }
+    if (actionCategory === 'storage' && actionType === 'extend_volume') {
+      this.maybeFetchVolumes();
     }
   };
 
   handleActionEnabledChange = (checked) => {
     this.setState({ actionEnabled: checked });
     const { actionCategory, actionType } = this.state;
+    if (!checked) return;
     if (
-      checked &&
       actionCategory === 'compute' &&
       ['scale_up', 'scale_down'].includes(actionType)
     ) {
       this.maybeFetchFlavors();
+    }
+    if (actionCategory === 'storage' && actionType === 'extend_volume') {
+      this.maybeFetchVolumes();
+    }
+    if (actionCategory === 'network' && actionType === 'apply_security_group') {
+      this.maybeFetchSecurityGroups();
     }
   };
 
@@ -348,6 +491,12 @@ export default class Alerts extends Component {
     if (val === 'compute' && ['scale_up', 'scale_down'].includes(defaultType)) {
       this.maybeFetchFlavors();
     }
+    if (val === 'storage' && defaultType === 'extend_volume') {
+      this.maybeFetchVolumes();
+    }
+    if (val === 'network' && defaultType === 'apply_security_group') {
+      this.maybeFetchSecurityGroups();
+    }
   };
 
   handleActionTypeChange = (val) => {
@@ -360,6 +509,15 @@ export default class Alerts extends Component {
       ['scale_up', 'scale_down'].includes(val)
     ) {
       this.maybeFetchFlavors();
+    }
+    if (this.state.actionCategory === 'storage' && val === 'extend_volume') {
+      this.maybeFetchVolumes();
+    }
+    if (
+      this.state.actionCategory === 'network' &&
+      val === 'apply_security_group'
+    ) {
+      this.maybeFetchSecurityGroups();
     }
   };
 
@@ -440,7 +598,63 @@ export default class Alerts extends Component {
     this.fetchActionLogs();
   };
 
+  // Équivalent des liens reçus par email, mais directement depuis l'interface :
+  // le client peut confirmer/annuler une action sans avoir à ouvrir sa boîte mail.
+  handleConfirmActionLog = async (logId) => {
+    try {
+      await this.apiFetch(`/alerts/actions/logs/${logId}/confirm`, {
+        method: 'POST',
+      });
+      notification.success({
+        message: t('Action confirmed'),
+        description: t('The automatic action will be executed shortly.'),
+        duration: 4,
+      });
+      this.fetchActionLogs();
+    } catch (e) {
+      notification.error({
+        message: t('Error'),
+        description: String(e),
+        duration: 5,
+      });
+    }
+  };
+
+  handleCancelActionLogConfirmation = async (logId) => {
+    try {
+      await this.apiFetch(`/alerts/actions/logs/${logId}/cancel`, {
+        method: 'POST',
+      });
+      notification.info({
+        message: t('Action cancelled'),
+        duration: 3,
+      });
+      this.fetchActionLogs();
+    } catch (e) {
+      notification.error({
+        message: t('Error'),
+        description: String(e),
+        duration: 5,
+      });
+    }
+  };
+
   metricLabel = (m) => (METRICS.find((x) => x.value === m) || {}).label || m;
+
+  handleActionLogSearchChange = (e) => {
+    this.setState({ actionLogSearch: e.target.value });
+  };
+
+  getFilteredActionLogs = () => {
+    const { actionLogs, actionLogSearch } = this.state;
+    const query = (actionLogSearch || '').trim().toLowerCase();
+    if (!query) return actionLogs;
+    return actionLogs.filter(
+      (r) =>
+        (r.rule_name || '').toLowerCase().includes(query) ||
+        (r.instance_name || '').toLowerCase().includes(query)
+    );
+  };
 
   rulesColumns = () => [
     { title: t('Name'), dataIndex: 'name', key: 'name' },
@@ -454,7 +668,17 @@ export default class Alerts extends Component {
     {
       title: t('Condition'),
       key: 'cond',
-      render: (_, r) => `${r.operator === 'gt' ? '>' : '<'} ${r.threshold}`,
+      render: (_, r) => {
+        const op = OPERATOR_SYMBOLS[r.operator] || '>';
+        const duration = r.duration_seconds || 0;
+        const durationTxt = duration
+          ? ` ${t('for')} ${
+              (DURATION_OPTIONS.find((d) => d.value === duration) || {})
+                .label || `${duration}s`
+            }`
+          : '';
+        return `${op} ${r.threshold}${durationTxt}`;
+      },
     },
     {
       title: t('Notifications'),
@@ -664,6 +888,46 @@ export default class Alerts extends Component {
       key: 'result_message',
       render: (val) => val || '-',
     },
+    {
+      title: t('Confirmation'),
+      key: 'confirmation',
+      width: 190,
+      render: (_, r) =>
+        r.status === 'awaiting_confirmation' ? (
+          <span style={{ display: 'flex', gap: 6 }}>
+            <Popconfirm
+              title={t('Execute this automatic action now?')}
+              okText={t('Confirm')}
+              cancelText={t('Cancel')}
+              onConfirm={() => this.handleConfirmActionLog(r.id)}
+            >
+              <Button
+                size="small"
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                style={{
+                  backgroundColor: COLOR.success,
+                  borderColor: COLOR.success,
+                }}
+              >
+                {t('Confirm')}
+              </Button>
+            </Popconfirm>
+            <Popconfirm
+              title={t('Cancel this automatic action?')}
+              okText={t('Yes')}
+              cancelText={t('No')}
+              onConfirm={() => this.handleCancelActionLogConfirmation(r.id)}
+            >
+              <Button size="small" danger icon={<CloseCircleOutlined />}>
+                {t('Cancel')}
+              </Button>
+            </Popconfirm>
+          </span>
+        ) : (
+          '-'
+        ),
+    },
   ];
 
   render() {
@@ -673,7 +937,6 @@ export default class Alerts extends Component {
       history,
       activeAlerts,
       activeCount,
-      actionLogs,
       showForm,
       editingRule,
       notifyEmail,
@@ -686,6 +949,10 @@ export default class Alerts extends Component {
       actionRequireConfirmation,
       flavors,
       loadingFlavors,
+      volumes,
+      loadingVolumes,
+      securityGroups,
+      loadingSecurityGroups,
     } = this.state;
 
     const activeRulesCount = rules.filter((r) => r.is_active).length;
@@ -920,8 +1187,11 @@ export default class Alerts extends Component {
                     initialValue="gt"
                   >
                     <Select>
-                      <Option value="gt">&gt;</Option>
-                      <Option value="lt">&lt;</Option>
+                      {OPERATOR_OPTIONS.map((o) => (
+                        <Option key={o.value} value={o.value}>
+                          {o.label}
+                        </Option>
+                      ))}
                     </Select>
                   </Form.Item>
                   <Form.Item
@@ -933,42 +1203,121 @@ export default class Alerts extends Component {
                   </Form.Item>
                 </div>
 
+                <Form.Item
+                  name="duration_seconds"
+                  label={t('Trigger only if condition stays true for')}
+                  initialValue={60}
+                  extra={t(
+                    'Avoids reacting to a brief, one-off spike: the condition must remain true continuously for this long before the alert fires. Enter any duration in seconds, or use a shortcut below.'
+                  )}
+                  style={{ marginBottom: 6 }}
+                >
+                  <InputNumber
+                    min={0}
+                    step={1}
+                    style={{ width: 220 }}
+                    addonAfter={t('seconds')}
+                    placeholder="120"
+                  />
+                </Form.Item>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                  {DURATION_OPTIONS.map((d) => (
+                    <Button
+                      key={d.value}
+                      size="small"
+                      onClick={() =>
+                        this.formRef.current &&
+                        this.formRef.current.setFieldsValue({
+                          duration_seconds: d.value,
+                        })
+                      }
+                    >
+                      {d.label}
+                    </Button>
+                  ))}
+                </div>
+
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: 12,
                     marginTop: 4,
+                    paddingTop: 12,
+                    borderTop: `1px dashed ${COLOR.border}`,
                   }}
                 >
-                  <Form.Item
-                    name="notify_ui"
-                    label="UI"
-                    valuePropName="checked"
-                    initialValue
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: COLOR.textCaption,
+                      marginBottom: 8,
+                    }}
                   >
+                    {t(
+                      'Notifications — the alert always appears in the UI (active alerts list and the menu badge). Optionally, also notify by:'
+                    )}
+                  </div>
+                  <Form.Item name="notify_ui" initialValue hidden>
                     <Switch />
                   </Form.Item>
-                  <Form.Item
-                    name="notify_email"
-                    label="Email"
-                    valuePropName="checked"
-                    initialValue={false}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, 1fr)',
+                      gap: 16,
+                    }}
                   >
-                    <Switch
-                      onChange={(v) => this.setState({ notifyEmail: v })}
-                    />
-                  </Form.Item>
-                  <Form.Item
-                    name="notify_webhook"
-                    label="Webhook"
-                    valuePropName="checked"
-                    initialValue={false}
-                  >
-                    <Switch
-                      onChange={(v) => this.setState({ notifyWebhook: v })}
-                    />
-                  </Form.Item>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                      }}
+                    >
+                      <Form.Item
+                        name="notify_email"
+                        valuePropName="checked"
+                        initialValue={false}
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Switch
+                          onChange={(v) => this.setState({ notifyEmail: v })}
+                        />
+                      </Form.Item>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>Email</div>
+                        <div style={{ fontSize: 11, color: COLOR.textCaption }}>
+                          {t(
+                            'Receive an email as soon as the alert triggers (even if no one is logged in).'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                      }}
+                    >
+                      <Form.Item
+                        name="notify_webhook"
+                        valuePropName="checked"
+                        initialValue={false}
+                        style={{ marginBottom: 0 }}
+                      >
+                        <Switch
+                          onChange={(v) => this.setState({ notifyWebhook: v })}
+                        />
+                      </Form.Item>
+                      <div>
+                        <div style={{ fontWeight: 500 }}>Webhook</div>
+                        <div style={{ fontSize: 11, color: COLOR.textCaption }}>
+                          {t(
+                            'Send the alert to an external URL (e.g. a Slack, Microsoft Teams or Rocket.Chat channel) to notify a team.'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {notifyEmail && (
@@ -983,9 +1332,12 @@ export default class Alerts extends Component {
                 {notifyWebhook && (
                   <Form.Item
                     name="webhook_url"
-                    label={t('Webhook URL (Slack/Teams)')}
+                    label={t('Webhook URL (Slack / Teams / Rocket.Chat)')}
+                    extra={t(
+                      'Works with any service accepting incoming webhooks: Slack, Microsoft Teams, Rocket.Chat, etc.'
+                    )}
                   >
-                    <Input placeholder="https://hooks.slack.com/services/..." />
+                    <Input placeholder="https://chat.example.com/hooks/... or https://hooks.slack.com/services/..." />
                   </Form.Item>
                 )}
 
@@ -1065,15 +1417,20 @@ export default class Alerts extends Component {
                             name={['action', 'params', 'target_flavor_id']}
                             label={t('Target flavor')}
                             rules={[{ required: true, message: t('Required') }]}
+                            extra={t(
+                              'Only flavors actually usable for this direction are listed (Nova never allows shrinking the root disk).'
+                            )}
                           >
                             <Select
                               loading={loadingFlavors}
                               placeholder={t('Select a flavor')}
-                              notFoundContent={t(
-                                'Select a target instance first'
-                              )}
+                              notFoundContent={
+                                flavors.length
+                                  ? t('No eligible flavor for this direction')
+                                  : t('Select a target instance first')
+                              }
                             >
-                              {flavors.map((f) => (
+                              {this.getSelectableFlavors().map((f) => (
                                 <Option key={f.id} value={f.id}>
                                   {`${f.name} (${f.vcpus} vCPU, ${f.ram} MB RAM, ${f.disk} GB)`}
                                 </Option>
@@ -1096,52 +1453,31 @@ export default class Alerts extends Component {
 
                       {/* Network */}
                       {actionCategory === 'network' &&
-                        actionType === 'add_firewall_rule' && (
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(4, 1fr)',
-                              gap: 12,
-                            }}
+                        actionType === 'apply_security_group' && (
+                          <Form.Item
+                            name={['action', 'params', 'security_group_id']}
+                            label={t('Security group to apply')}
+                            rules={[{ required: true, message: t('Required') }]}
+                            extra={t(
+                              'The selected security group is added to the VM network ports — existing security groups are kept, rules are additive.'
+                            )}
                           >
-                            <Form.Item
-                              name={['action', 'params', 'protocol']}
-                              label={t('Protocol')}
-                              initialValue="tcp"
+                            <Select
+                              loading={loadingSecurityGroups}
+                              placeholder={t('Select a security group')}
+                              notFoundContent={t(
+                                'No security group found in your project'
+                              )}
                             >
-                              <Select>
-                                <Option value="tcp">TCP</Option>
-                                <Option value="udp">UDP</Option>
-                                <Option value="icmp">ICMP</Option>
-                              </Select>
-                            </Form.Item>
-                            <Form.Item
-                              name={['action', 'params', 'port_range']}
-                              label={t('Port / Range')}
-                            >
-                              <Input placeholder="80 ou 1000-2000" />
-                            </Form.Item>
-                            <Form.Item
-                              name={['action', 'params', 'direction']}
-                              label={t('Direction')}
-                              initialValue="ingress"
-                            >
-                              <Select>
-                                <Option value="ingress">Ingress</Option>
-                                <Option value="egress">Egress</Option>
-                              </Select>
-                            </Form.Item>
-                            <Form.Item
-                              name={['action', 'params', 'rule_action']}
-                              label={t('Rule action')}
-                              initialValue="block"
-                            >
-                              <Select>
-                                <Option value="block">{t('Block')}</Option>
-                                <Option value="limit">{t('Limit')}</Option>
-                              </Select>
-                            </Form.Item>
-                          </div>
+                              {securityGroups.map((sg) => (
+                                <Option key={sg.id} value={sg.id}>
+                                  {sg.description
+                                    ? `${sg.name} — ${sg.description}`
+                                    : sg.name}
+                                </Option>
+                              ))}
+                            </Select>
+                          </Form.Item>
                         )}
                       {actionCategory === 'network' &&
                         actionType === 'reassign_floating_ip' && (
@@ -1156,48 +1492,172 @@ export default class Alerts extends Component {
                       {/* Storage */}
                       {actionCategory === 'storage' &&
                         actionType === 'extend_volume' && (
-                          <Form.Item
-                            name={['action', 'params', 'size_gb']}
-                            label={t('Size to add (GB)')}
-                            rules={[{ required: true, message: t('Required') }]}
-                          >
-                            <InputNumber
-                              style={{ width: '100%' }}
-                              min={1}
-                              placeholder="10"
-                            />
-                          </Form.Item>
-                        )}
+                          <div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: COLOR.textCaption,
+                                marginBottom: 8,
+                              }}
+                            >
+                              {t(
+                                'Choose one or more volumes — each one can get its own size to add.'
+                              )}
+                            </div>
+                            <Form.List name={['action', 'params', 'volumes']}>
+                              {(fields, { add, remove }) => (
+                                <>
+                                  {fields.map((field) => (
+                                    <Form.Item
+                                      shouldUpdate
+                                      noStyle
+                                      key={field.key}
+                                    >
+                                      {() => {
+                                        const rowVolumes = this.formRef.current
+                                          ? this.formRef.current.getFieldValue([
+                                              'action',
+                                              'params',
+                                              'volumes',
+                                            ]) || []
+                                          : [];
+                                        const otherSelectedIds = rowVolumes
+                                          .filter((_, i) => i !== field.name)
+                                          .map((r) => r && r.volume_id)
+                                          .filter(Boolean);
+                                        const rowValue =
+                                          rowVolumes[field.name] || {};
+                                        const vol = volumes.find(
+                                          (v) => v.id === rowValue.volume_id
+                                        );
+                                        const sizeGb = rowValue.size_gb;
 
-                      {/* Load Balancer */}
-                      {actionCategory === 'loadbalancer' && (
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1fr 1fr',
-                            gap: 12,
-                          }}
-                        >
-                          <Form.Item
-                            name={['action', 'params', 'pool_id']}
-                            label={t('Load balancer pool')}
-                          >
-                            <Input placeholder={t('Pool ID')} />
-                          </Form.Item>
-                          <Form.Item
-                            name={['action', 'params', 'member_instance_id']}
-                            label={t('VM to add/remove')}
-                          >
-                            <Select>
-                              {instances.map((i) => (
-                                <Option key={i.uuid} value={i.uuid}>
-                                  {i.name}
-                                </Option>
-                              ))}
-                            </Select>
-                          </Form.Item>
-                        </div>
-                      )}
+                                        return (
+                                          <div
+                                            style={{
+                                              display: 'flex',
+                                              gap: 8,
+                                              alignItems: 'flex-start',
+                                              flexWrap: 'wrap',
+                                              marginBottom: 4,
+                                            }}
+                                          >
+                                            <Form.Item
+                                              name={[field.name, 'volume_id']}
+                                              rules={[
+                                                {
+                                                  required: true,
+                                                  message: t('Required'),
+                                                },
+                                              ]}
+                                              style={{
+                                                flex: '1 1 260px',
+                                                minWidth: 200,
+                                                marginBottom: 4,
+                                              }}
+                                            >
+                                              <Select
+                                                loading={loadingVolumes}
+                                                placeholder={t(
+                                                  'Select a volume'
+                                                )}
+                                                notFoundContent={
+                                                  volumes.length === 0 &&
+                                                  !loadingVolumes
+                                                    ? t(
+                                                        'No volume attached to this instance'
+                                                      )
+                                                    : t(
+                                                        'Select a target instance first'
+                                                      )
+                                                }
+                                              >
+                                                {volumes
+                                                  .filter(
+                                                    (v) =>
+                                                      !otherSelectedIds.includes(
+                                                        v.id
+                                                      )
+                                                  )
+                                                  .map((v) => (
+                                                    <Option
+                                                      key={v.id}
+                                                      value={v.id}
+                                                    >
+                                                      {`${v.name} — ${v.size} GB (${v.status})`}
+                                                    </Option>
+                                                  ))}
+                                              </Select>
+                                            </Form.Item>
+                                            <Form.Item
+                                              name={[field.name, 'size_gb']}
+                                              rules={[
+                                                {
+                                                  required: true,
+                                                  message: t('Required'),
+                                                },
+                                              ]}
+                                              style={{
+                                                flex: '0 0 130px',
+                                                width: 130,
+                                                marginBottom: 4,
+                                              }}
+                                            >
+                                              <InputNumber
+                                                style={{ width: '100%' }}
+                                                min={1}
+                                                placeholder="10"
+                                                addonAfter="GB"
+                                              />
+                                            </Form.Item>
+                                            <Button
+                                              danger
+                                              size="small"
+                                              icon={<DeleteOutlined />}
+                                              onClick={() => remove(field.name)}
+                                              style={{
+                                                marginTop: 2,
+                                                flex: '0 0 auto',
+                                              }}
+                                            />
+                                            {vol && sizeGb ? (
+                                              <div
+                                                style={{
+                                                  flexBasis: '100%',
+                                                  fontSize: 11,
+                                                  color: COLOR.textCaption,
+                                                  marginTop: -2,
+                                                  marginBottom: 6,
+                                                }}
+                                              >
+                                                {t('Total after extension')}:{' '}
+                                                <strong
+                                                  style={{
+                                                    color: COLOR.purple,
+                                                  }}
+                                                >
+                                                  {vol.size + Number(sizeGb)} GB
+                                                </strong>{' '}
+                                                ({t('currently')} {vol.size} GB)
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                        );
+                                      }}
+                                    </Form.Item>
+                                  ))}
+                                  <Button
+                                    size="small"
+                                    onClick={() => add()}
+                                    disabled={fields.length >= volumes.length}
+                                  >
+                                    + {t('Add a volume')}
+                                  </Button>
+                                </>
+                              )}
+                            </Form.List>
+                          </div>
+                        )}
 
                       {/* Config générale */}
                       <div
@@ -1245,10 +1705,13 @@ export default class Alerts extends Component {
                       {actionRequireConfirmation && (
                         <Form.Item
                           name={['action', 'confirmation_email']}
-                          label={t('Confirmation email')}
+                          label={t('Confirmation email (optional)')}
                           rules={[
                             { type: 'email', message: t('Invalid email') },
                           ]}
+                          extra={t(
+                            'If left empty, you will not receive a confirmation link by email — you can still confirm or cancel the action directly from the Action Log table in the Skyline interface.'
+                          )}
                         >
                           <Input placeholder="admin@example.com" />
                         </Form.Item>
@@ -1324,6 +1787,16 @@ export default class Alerts extends Component {
         {/* Action Logs */}
         <Card
           title={t('Action Log')}
+          extra={
+            <Input
+              allowClear
+              placeholder={t('Search by rule or instance name')}
+              prefix={<SearchOutlined style={{ color: COLOR.textCaption }} />}
+              value={this.state.actionLogSearch}
+              onChange={this.handleActionLogSearchChange}
+              style={{ width: 260 }}
+            />
+          }
           bordered={false}
           style={{
             marginTop: 16,
@@ -1333,14 +1806,20 @@ export default class Alerts extends Component {
           }}
         >
           <Table
-            dataSource={actionLogs}
+            dataSource={this.getFilteredActionLogs()}
             columns={this.actionLogColumns()}
             rowKey="id"
             size="middle"
             pagination={{ pageSize: 10 }}
             locale={{
               emptyText: (
-                <Empty description={t('No automatic actions triggered yet.')} />
+                <Empty
+                  description={
+                    this.state.actionLogSearch
+                      ? t('No action log matches your search.')
+                      : t('No automatic actions triggered yet.')
+                  }
+                />
               ),
             }}
           />

@@ -71,7 +71,6 @@ const renderMenu = (t) => {
               key: 'ironicCreate',
               level: 2,
             },
-         
           ],
         },
         {
@@ -171,7 +170,7 @@ const renderMenu = (t) => {
         },
         {
           path: '/compute/instance/vm-ranking',
-          name: t('VM Ranking'),
+          name: t('Top Consumers'),
           key: 'vmRanking',
           level: 1,
         },
